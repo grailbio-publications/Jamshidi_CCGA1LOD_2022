@@ -1,0 +1,2276 @@
+---
+title: "Tables and figures for Jamshidi et al., CCGA1/LOD manuscript"
+author: "John Beausang (jbeausang@grailbio.com)"
+date: '`r format(Sys.time(), "%Y-%m-%d %X")`'
+output: html_document
+---
+
+<style type="text/css">
+.main-container {
+max-width: 2000px;
+margin-left: auto;
+margin-right: auto;
+}</style>
+
+```{r setup, echo = FALSE}
+# Packages installed with Tidyverse.
+requireNamespace("readr", quietly = TRUE)
+requireNamespace("purrr", quietly = TRUE)
+requireNamespace("stringr", quietly = TRUE)
+requireNamespace("tidyr", quietly = TRUE)
+requireNamespace("magrittr", quietly = TRUE)
+requireNamespace("dplyr", quietly = TRUE)
+requireNamespace("tibble", quietly = TRUE)
+requireNamespace("tidyselect", quietly = TRUE)
+requireNamespace("rlang", quietly = TRUE)
+requireNamespace("scales", quietly = TRUE)
+requireNamespace("broom", quietly = TRUE)
+suppressMessages(library(ggplot2))
+
+# Packages that are not installed with Tidyverse.
+requireNamespace("assertr", quietly = TRUE)
+requireNamespace("pander", quietly = TRUE)
+requireNamespace("pROC", quietly = TRUE)
+requireNamespace("scam", quietly = TRUE)
+requireNamespace("gridExtra", quietly = TRUE)
+requireNamespace("ggpubr", quietly = TRUE)
+requireNamespace("UpSetR", quietly = TRUE)
+
+`%>%` <- magrittr::`%>%`
+
+# Set default chunk output.
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      tidy = FALSE, results = "asis")
+
+# Formatting of pander tables.
+pander::panderOptions('knitr.auto.asis', TRUE)
+pander::panderOptions("table.split.table", Inf)
+
+# Set ggplot style.
+ggplot2::theme_set(ggplot2::theme_bw())
+```
+
+```{r input_path}
+datadir <- "../data"
+
+if (!file.exists(file.path(datadir, "scores_cnc.tsv"))) {
+  cat("Could not find source data.  Check project location and/or datadir.  \n")
+  knitr::knit_exit()
+}
+```
+
+```{r output_path}
+write_output <- TRUE
+outdir <- "../out"
+dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
+if (write_output) {
+  cat(paste0("Output files written to ", outdir, ".  \n"))
+}
+```
+
+# Local functions
+
+```{r define_local_functions}
+
+#' Check if columns present in data.frame
+#'
+#' @param df_data The input data.frame.
+#' @param required_columns A vector of column names to check.
+#'
+#' @return nothing; stops with error if any column(s) missing.
+#' @export
+require_columns <- function(df_data,
+                            required_columns) {
+
+  missing_cols <- sort(setdiff(required_columns, colnames(df_data)))
+  if (length(missing_cols) != 0) {
+    stop("Missing required columns: ",
+         paste0(missing_cols, sep = "", collapse = ", "))
+  }
+}
+
+#' Replicate ggplot color palette for 'n' levels
+#'
+#' @param n The number of color levels.
+#'
+#' @return A vector of length 'n' colors in hexadecimal notation.
+#' @export
+gg_color_hue <- function(n) {
+  hues <- seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+#' Add column of 'stars' for p-value significance
+#'
+#' @param df_data The input data.frame.
+#' @param wh_col The name of column containing p-values.
+#'
+#' @return df_data with additional "stars" column containing string
+#'         indicating p-value significance visually.
+#' @export
+add_pvalue_stars <- function(df_data,
+                             wh_col = "p.value") {
+  require_columns(df_data, wh_col)
+  df_data %>%
+    dplyr::mutate(my_pvalue = !!rlang::sym(wh_col),
+                  stars = dplyr::case_when(is.na(my_pvalue) ~ " ",
+                                           my_pvalue > 0.1 ~ " ",
+                                           my_pvalue > 0.05 ~ ".",
+                                           my_pvalue > 0.01 ~ "*",
+                                           my_pvalue > 0.001 ~ "**",
+                                           my_pvalue <= 0.001 ~ "***")) %>%
+    dplyr::select(-my_pvalue)
+}
+
+#' Compute upper or lower 95% binomial confidence limits
+#'
+#' @param vec_n_succ A vector of success counts.
+#' @param vec_n_total A vector of total counts.
+#' @param ucb_lcb Either "lcb" or "ucb" for lower or upper confidence bound, respectively.
+#'
+#' @return A vector of upper or lower confidence bounds.
+add_binom_confints <- function(vec_n_succ,
+                               vec_n_total,
+                               ucb_lcb = c("ucb", "lcb")) {
+  ucb_lcb <- match.arg(ucb_lcb)
+  if (ucb_lcb == "lcb") {
+    wh_idx <- 1
+  } else {
+    wh_idx <- 2
+  }
+  purrr:::map2_dbl(vec_n_succ,
+                   vec_n_total,
+                   function(x, y) ifelse(y == 0,
+                                         0,
+                                         binom.test(x, y)$conf.int[wh_idx]))
+}
+
+
+#' Collapse cancer types to 'Remaining' class
+#'
+#' Format column 'wh_col' containing cancer type label to instead contain one of
+#' the 4 cancer types: "Colon/Rectum", "Lung", "Breast" and "Remaining", where "Remaining"
+#' contains the other cancer_types.
+#'
+#' @param df_data The input data.frame.
+#' @param wh_col The column containing cancer types.
+#'
+#' @return Input data.frame with 'wh_col' column modified to contain collapsed cancer type.
+#' @export
+collapse_cancer_type_to_remaining <- function(df_data,
+                                              wh_col = "cancer_type") {
+  require_columns(df_data, wh_col)
+  df_data %>%
+    dplyr::mutate(!!rlang::sym(wh_col) :=
+                    ifelse(!!rlang::sym(wh_col) %in% c("Colon/Rectum", "Lung", "Breast"),
+                           !!rlang::sym(wh_col),
+                           "Remaining"))
+}
+
+#' Collapse set of cancer types into "Other" for confusion matrices
+#'
+#' CSO classifiers used an aggregate cancer type label 'Other' containing:
+#' "Anus", "Cancer of unknown primary", "Melanoma", "Stomach", "Thyroid",
+#' "Uterus", and "Leukemia".
+#'
+#' @param df_cso A data.frame containing CSO labels and scores.
+#'
+#' @return The input data.frame with two additional columns containing the 'Other'
+#'         cancer class for cancer_type and label_1st.
+#' @export
+collapse_cancer_types_to_other <- function(df_cso) {
+  require_columns(df_cso,
+                  c("cancer_type", "label_1st"))
+
+  # Combine these cancer_type into "Other" for confusion matrices.
+  vec_label_as_other <- c("Anus", "Cancer of unknown primary", "Melanoma",
+                          "Stomach", "Thyroid", "Uterus", "Leukemia")
+
+  df_cso %>%
+    dplyr::mutate(cancer_type_w_other = ifelse(cancer_type %in% vec_label_as_other,
+                                               "Other", cancer_type),
+                  label_1st_w_other = ifelse(label_1st %in% vec_label_as_other,
+                                             "Other", label_1st))
+}
+
+# Define cancer_type order for confusion matrices.
+vec_score_cols <- c("Liver/Bile duct/Gallbladder", "Ovary", "Colon/Rectum", "Pancreas", "Head/Neck",
+                    "Other", "Esophagus", "Lymphoma", "Lung", "Cervix",
+                    "Kidney", "Breast", "Plasma cell neoplasm")
+```
+
+# Load general data
+
+## Scores
+
+```{r load_scores}
+df_scores_cnc <- readr::read_tsv(file.path(datadir,
+                                           "scores_cnc.tsv"))
+```
+
+## Clinical
+
+```{r load_clinical}
+clin <- readr::read_tsv(file.path(datadir,
+                                  "clinical.tsv"))
+```
+
+## cTF and cTAF
+
+```{r load_ctaf}
+score_and_ctaf <- readr::read_tsv(file.path(datadir,
+                                            "score_and_ctaf.tsv"))
+```
+
+# Figures
+
+## Figure 1: Consort diagram
+
+No code.
+
+## Figure 2: ROC curves
+
+TPR and FPR tables determine sensitivity and specificity using the score cutoffs as
+desribed in the manuscript.  The sensitivity and specificity from the ROC curves generated
+by the `pROC` package are for visualization purposes only.
+
+```{r}
+#' Compute TPR and FPR for each classifier
+#'
+#' @param df_scores_cnc Scores data.frame for each participant and classifier.
+#' @param c_or_n Subset data to either "cancer" (for true positives) or
+#'               "non_cancer" (for false positives).  Default is "cancer".
+#'
+#' @return data.frame containing the number of predicted cancers and non-cancers,
+#'         positive rate, and 95% binomial confidence intervals for each classifier
+#'         and dataset (training and validation).
+#' @export
+make_tpr_or_fpr_table <- function(df_scores_cnc,
+                                  c_or_n = c("cancer", "non_cancer")) {
+  c_or_n <- match.arg(c_or_n)
+
+  df_scores_cnc %>%
+    dplyr::filter(cnc_label_actual == c_or_n) %>%
+    dplyr::count(classifier_name, train_or_valid, cnc_label_predict) %>%
+    tidyr::pivot_wider(names_from = cnc_label_predict,
+                       values_from = n,
+                       values_fill = 0L) %>%
+    dplyr::mutate(lcb = add_binom_confints(cancer, cancer + non_cancer, "lcb"),
+                  ucb = add_binom_confints(cancer, cancer + non_cancer, "ucb"),
+                  total = cancer + non_cancer,
+                  pos_rate = cancer/total,
+                  pos_rate_pretty = sprintf("%g%% (%d/%d) \n[%g%%-%g%%]",
+                                            signif(pos_rate*100, digits = 2),
+                                            cancer, total,
+                                            signif(lcb*100, digits = 2),
+                                            signif(ucb*100, digits = 2)))
+}
+
+df_tpr <- df_scores_cnc %>%
+  make_tpr_or_fpr_table(c_or_n = "cancer")
+
+df_fpr <- df_scores_cnc %>%
+  make_tpr_or_fpr_table(c_or_n = "non_cancer")
+```
+
+```{r}
+#' Generate ROC curves and table of performance metrics
+#'
+#' @param df_scores A scores data.frame for each participant and classifier.
+#' @param df_points A data.frame of TPR and FPR point estimates for each classifier.
+#' @param spec_cutpoint The specificity cutpoint (e.g., 0.98).
+#' @param pauc_range The range to compute partial AUC (e.g., (0.98, 1)).
+#' @param vec_classifier_order_roc Vector containing the order of the classifiers.
+#' @param vec_colors A vector of colors for each classifier or "" to use standard
+#'        ggplot colors.  Default is "".
+#' @param vec_fills A vector of fill colors for each classifier or "" for white fill.
+#'        Default is "".
+#' @param vec_linetypes A vector of line types for each classifier or "" for solid
+#'        lines.  Default is "".
+#'
+#' @return A list containing:
+#'    * df_roc_summary = summary metrics as determined by pROC package.
+#'    * proc_plot = ROC curve plot.
+#' @export
+make_mult_roc <- function(df_scores,
+                          df_points,
+                          spec_cutpoint,
+                          pauc_range,
+                          vec_classifier_order_roc,
+                          vec_colors = "",
+                          vec_fills = "",
+                          vec_linetypes = "") {
+
+  # Derive data set for ROC curve & metrics.
+  df_roc_input <- df_scores %>%
+    dplyr::mutate(ground_truth = (cnc_label_actual != "non_cancer")) %>%
+    dplyr::select(id, dataset, predictions = p_cancer, cnc_label_predict,
+                  cnc_label_actual, ground_truth)
+
+  # List of datasets for each classifier.
+  ls_roc_input_per_dataset <- df_roc_input %>%
+    split(.$dataset)
+
+  # ROC curves and table of results.
+  res_roc <- plot_mult_roc_curve(ls_predictions = ls_roc_input_per_dataset,
+                                 df_points = df_points,
+                                 spec_cutpoint = spec_cutpoint,
+                                 pauc_range = pauc_range,
+                                 vec_classifier_order_roc = vec_classifier_order_roc,
+                                 vec_colors = vec_colors,
+                                 vec_fills = vec_fills,
+                                 vec_linetypes = vec_linetypes)
+
+  return(list(
+    df_roc_summary = res_roc$df_roc_summary,
+    proc_plot = res_roc$p_roc
+  ))
+}
+
+
+#' Generate ROC curves for list of datasets
+#'
+#' @inheritParams make_mult_roc
+#' @param ls_predictions A list of predictions (classifier scores) and ground-truth
+#'        labels for each classifier.
+#'
+#' @return A list containing:
+#'    * df_roc_summary = summary metrics as determined by pROC package.
+#'    * proc_plot = ROC curve plot.
+#' @export
+plot_mult_roc_curve <- function(ls_predictions,
+                                df_points,
+                                spec_cutpoint,
+                                pauc_range,
+                                vec_classifier_order_roc,
+                                vec_colors = "",
+                                vec_fills = "",
+                                vec_linetypes = "") {
+
+  # Collect summary statistics from pROC for each classifier.
+  ls_roc <- vector("list", length(ls_predictions))
+  names(ls_roc) <- names(ls_predictions)
+
+  stopifnot(identical(
+    sort(vec_classifier_order_roc),
+    sort(names(ls_predictions))))
+
+  for (i in seq_along(ls_predictions)) {
+
+    n_cases <- sum(ls_predictions[[i]]$ground_truth) # cancers
+    n_controls <- sum(!ls_predictions[[i]]$ground_truth) # non-cancers
+
+    # Get dataset/run name.
+    dataset <- unique(ls_predictions[[i]]$dataset)
+    stopifnot(length(dataset) == 1)
+
+    # Direction =  "<" since the predictor values (p_cancer) for the control
+    # group (non_cancers) are lower than or equal to the values of the case
+    # group (cancers).
+    roc_object <- pROC::roc(ls_predictions[[i]]$ground_truth,
+                            ls_predictions[[i]]$predictions,
+                            direction =  "<")
+    # Define full and partial (corrected) AUC.
+    auc <- signif(pROC::auc(roc_object), digits = 2)
+    pauc <- signif(pROC::auc(roc_object,
+                             partial.auc = pauc_range,
+                             partial.auc.correct = TRUE,
+                             allow.invalid.partial.auc.correct = TRUE),
+                   digits = 2)
+    plot_df <- data.frame(fpr = rev(1 - roc_object$specificities),
+                          tpr = rev(roc_object$sensitivities),
+                          dataset = dataset,
+                          stringsAsFactors = FALSE)
+
+    ls_roc[[i]] <- list(
+      n_cases = n_cases,
+      n_controls = n_controls,
+      auc = auc,
+      pauc = pauc,
+      plot_df = plot_df
+    )
+  }
+
+  # Extract summary statistics across datasets.
+  vec_names <- names(ls_roc)
+  names(ls_roc) <- NULL
+  df_roc_summary <- tibble::tibble(
+    dataset = vec_names,
+    auc = round(sapply(ls_roc, `[[`, "auc"), digits = 2),
+    pauc = round(sapply(ls_roc, `[[`, "pauc"), digits = 2),
+    n_cases = sapply(ls_roc, `[[`, "n_cases"),
+    n_controls = sapply(ls_roc, `[[`, "n_controls"))
+
+  # Add detailed labels (e.g., "run_1: Sn = 67% [2/3] at 80%Sp; auc = 0.88").
+  df_roc_summary <- df_roc_summary %>%
+    dplyr::mutate(
+      pretty_label = paste0(
+        dataset,
+        "; AUC = ", auc,
+        ", pAUC [Sp: ", pauc_range[1], "-", pauc_range[2], "] = ", pauc)
+    )
+
+  if (vec_colors == "") {
+    vec_colors <- gg_color_hue(length(ls_roc))
+  }
+  if (vec_fills == "") {
+    vec_fills <- rep("white", length(ls_roc))
+  }
+  if (vec_linetypes == "") {
+    vec_linetypes <- rep("solid", length(ls_roc))
+  }
+
+  # Collapse summary statistics into single data.frame for plotting.
+  df_plot <- dplyr::bind_rows(lapply(ls_roc, `[[`, "plot_df")) %>%
+    dplyr::arrange(dataset) %>%
+    dplyr::mutate(dataset = factor(dataset, levels = vec_classifier_order_roc))
+
+  # Plot all classifiers together.
+  p_roc <- df_plot %>%
+    ggplot2::ggplot(ggplot2::aes(x = fpr, y = tpr, color = dataset,
+                                 linetype = dataset, fill = dataset, group = dataset)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point(data = df_points,  shape = 21) +
+    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::scale_color_manual(values = vec_colors) +
+    ggplot2::scale_fill_manual(values = vec_fills) +
+    ggplot2::scale_linetype_manual(values = vec_linetypes) +
+    ggplot2::labs(color = "classifier", linetype = "classifier", fill = "classifier",
+                  x = "FPR",
+                  y = "TPR")
+
+  list(p_roc = p_roc,
+       df_roc_summary = df_roc_summary)
+}
+```
+
+```{r}
+# Compute ROC curves for train and validation sets.
+
+# Formatting details for ROC curve.
+df_roc_format <- tibble::tribble(
+  ~classifier_name,     ~colors,      ~fills,     ~linetypes,
+  "WG methylation",     "orangered",  "white",     "solid",
+  "SNV",                "blue",       "white",     "solid",
+  "SNV-WBC",            "blue",       "blue",      "dashed",
+  "SCNA",               "darkgreen",  "white",     "solid",
+  "SCNA-WBC",           "darkgreen",  "darkgreen", "dashed",
+  "Fragment endpoints", "darkgray",   "white",     "solid",
+  "Fragment lengths",   "purple",     "white",     "solid",
+  "Allelic imbalance",  "black",      "white",     "solid",
+  "Pan-feature",        "cyan",       "white",     "solid",
+  "Clinical data",      "gold",       "white",     "solid"
+)
+
+# Set of expected classifier names (excludes "Pan-feature" from training set).
+define_classifier_order <- function(train_or_valid = c("train", "valid")) {
+  train_or_valid <- match.arg(train_or_valid)
+  vec_classifier_order_roc_full <- df_roc_format$classifier_name
+
+  if (train_or_valid == "valid") {
+    return(vec_classifier_order_roc_full)
+  }
+  return(vec_classifier_order_roc_full[vec_classifier_order_roc_full != "Pan-feature"])
+}
+
+ls_roc <-
+  lapply(c(train = "train", valid = "valid"),
+         function(wh_trainvalid) {
+           # Define classifier order.
+           vec_classifier_order_roc <- define_classifier_order(wh_trainvalid)
+
+           # Subset scores to training or validation as appropriate.
+           df_scores <- df_scores_cnc %>%
+             dplyr::filter(train_or_valid == wh_trainvalid) %>%
+             dplyr::rename(dataset = classifier_name) %>%
+             dplyr::mutate(id = participant_id)
+
+           # Extract points at 98% specificity for plotting.
+           df_points <- df_tpr %>%
+             dplyr::filter(train_or_valid == wh_trainvalid) %>%
+             dplyr::mutate(fpr = 0.02) %>%
+             dplyr::select(dataset = classifier_name, tpr = pos_rate, fpr) %>%
+             assertr::verify(all(dataset %in% vec_classifier_order_roc)) %>%
+             dplyr::mutate(dataset = factor(dataset, levels = vec_classifier_order_roc)) %>%
+             dplyr::arrange(dataset) %>%
+             assertr::verify(length(unique(dataset)) == length(vec_classifier_order_roc))
+
+           # Helper function to get vector of colors, fills or linetypes for each classifier.
+           get_style <- function(wh_style = c("colors", "fills", "linetypes")) {
+             wh_style <- match.arg(wh_style)
+
+             vec_style <- df_roc_format %>%
+               dplyr::filter(classifier_name %in% vec_classifier_order_roc) %>%
+               dplyr::pull(!!rlang::sym(wh_style))
+
+             return(vec_style)
+           }
+
+           # Generate final ROC plot.
+           make_mult_roc(df_scores,
+                         df_points,
+                         spec_cutpoint = 0.98,
+                         pauc_range = c(1.0, 0.98),
+                         vec_classifier_order_roc = vec_classifier_order_roc,
+                         vec_colors = get_style("colors"),
+                         vec_fills = get_style("fills"),
+                         vec_linetypes = get_style("linetypes"))
+         }
+  )
+```
+
+```{r}
+# Extract ROC legend from plot.
+ls_roc_legends <-
+  lapply(ls_roc,
+         function(wh_ls) {
+           p_roc_format <- wh_ls$proc_plot +
+             theme(legend.position = "right",
+                   legend.title = element_blank())
+           ggpubr::as_ggplot(ggpubr::get_legend(p_roc_format))
+         }
+  )
+
+gridExtra::grid.arrange(
+  ls_roc_legends$train,
+  ls_roc_legends$valid,
+  nrow = 1)
+```
+
+### Training set
+
+```{r fig.width = 4, fig.asp = 1}
+# Full ROC.
+p_roc_train <- ls_roc$train$proc_plot +
+  theme(legend.position = "none") +
+  labs(x = "False Positive Rate",
+       y = "True Positive Rate")
+
+# ROC zoomed to high specificity region.
+p_roc_train_zoom <- p_roc_train +
+  ggplot2::coord_cartesian(xlim = c(0, 0.1), ylim = c(0, 0.5))
+
+print(p_roc_train)
+cat('\n\n')
+print(p_roc_train_zoom)
+cat('\n\n')
+ls_roc$train$df_roc_summary %>%
+  dplyr::rename(classifier = dataset) %>%
+  pander::pander(caption = "Training",
+                 justify = "left")
+```
+
+### Validation set
+
+```{r fig.width = 4, fig.asp = 1}
+# Full ROC.
+p_roc_valid <- ls_roc$valid$proc_plot +
+  theme(legend.position = "none") +
+  labs(x = "False Positive Rate",
+       y = "True Positive Rate")
+
+# ROC zoomed to high specificity region.
+p_roc_valid_zoom <- p_roc_valid +
+  ggplot2::coord_cartesian(xlim = c(0, 0.1), ylim = c(0, 0.5))
+
+print(p_roc_valid)
+cat('\n\n')
+print(p_roc_valid_zoom)
+cat('\n\n')
+ls_roc$valid$df_roc_summary %>%
+  dplyr::rename(classifier = dataset) %>%
+  pander::pander(caption = "Validation",
+                 justify = "left")
+```
+
+## Figure 3: Limit of detection (validation only)
+
+```{r}
+df_lod <- readr::read_tsv(file.path(datadir,
+                                    "lod.tsv")) %>%
+  # Add white space to Targeted methylation classifier name.
+  dplyr::mutate(classifier_name = stringr::str_replace_all(classifier_name,
+                                                           " \\(",
+                                                           "\n\\("))
+```
+
+```{r fig.asp = .7, fig.width = 6}
+dodge_width <- 0.5
+
+# String of counts in each study.
+str_train_or_valid_counts <- df_lod %>%
+  dplyr::mutate(train_or_valid_n = paste0(study, " ", train_or_valid, " (", n_obs, ")")) %>%
+  dplyr::pull(train_or_valid_n) %>%
+  unique() %>%
+  paste(collapse = ", ")
+
+#' Generate limit of detection plot
+#'
+#' @param df_lod A data.frame of LOD values.
+#' @param restrict_to_validation A boolean where TRUE excludes the training data.
+#'
+#' @return Plot of LODs for each classifier with 95% confidence intervals.
+#' @export
+make_lod_whisker_plot <- function(df_lod,
+                                  restrict_to_validation = FALSE) {
+
+  # Order by LOD in validation set, except keep Targeted and WG Methylation next to each other.
+  vec_classifier_order_methylation <- df_lod %>%
+    dplyr::filter(stringr::str_detect(classifier_name, "methylation")) %>%
+    dplyr::arrange(lod) %>%
+    dplyr::pull(classifier_name) %>%
+    unique()
+
+  vec_classifier_order_wo_methylation <- df_lod %>%
+    dplyr::filter(!stringr::str_detect(classifier_name, "methylation"),
+                  train_or_valid == "valid") %>%
+    dplyr::arrange(lod) %>%
+    dplyr::pull(classifier_name) %>%
+    unique()
+
+  vec_classifier_order_lod <- c(vec_classifier_order_methylation,
+                                vec_classifier_order_wo_methylation)
+
+  df_lod_filt <- df_lod %>%
+    dplyr::mutate(classifier_name = factor(classifier_name,
+                                           levels = vec_classifier_order_lod),
+                  train_or_valid = factor(train_or_valid,
+                                          levels = c("valid", "train"))) %>%
+    dplyr::arrange(classifier_name)
+
+  if (restrict_to_validation) {
+    df_lod_filt <- df_lod_filt %>%
+      dplyr::filter(train_or_valid == "valid")
+  }
+
+  # Manual overlay gray dot for targeted methylation so color is consistent.
+  ccga2_lod50_ctaf <- df_lod_filt %>%
+    dplyr::filter(stringr::str_detect(classifier_name, "Targeted")) %>%
+    dplyr::pull(lod)
+
+  p_lod <- df_lod_filt %>%
+    ggplot(aes(x = classifier_name,
+               y = lod,
+               group = train_or_valid,
+               color = study,
+               fill = train_or_valid)) +
+    geom_errorbar(aes(ymin = lod_lcb, ymax = lod_ucb), width=0.2,
+                  position = position_dodge(width = dodge_width)) +
+    geom_point(position = position_dodge(width = dodge_width), shape = 21) +
+    scale_fill_manual(values = c("black", "white")) +
+    scale_y_log10(breaks = c((1:9)*.00001, (1:9)*.0001, (1:9)*.001, (1:9)*.01),
+                  minor_breaks = NULL,
+                  labels = c(c("1e-5",  "", "", "", "5e-5", "", "", "", ""),
+                             c("1e-4",  "", "", "", "5e-4", "", "", "", ""),
+                             c("0.001", "", "", "", "0.005", "", "", "", ""),
+                             c("0.01",  "", "", "", "0.05", "", "", "", ""))) +
+    annotate("point", x = 1, y = ccga2_lod50_ctaf, color = "royalblue") +
+    coord_flip() +
+    scale_color_manual(values = c("black", "royalblue")) +
+    labs(x = "",
+         y = "Limit of Detection\n(Circulating Tumor Allele Fraction)",
+         caption = paste0("N = ", str_train_or_valid_counts)) +
+    theme(legend.position = "bottom")
+  return(p_lod)
+}
+```
+
+```{r}
+p_lod_valid <- make_lod_whisker_plot(df_lod, restrict_to_validation = TRUE)
+print(p_lod_valid)
+```
+
+## Figure 4: CSO confusion matrices for joint detected
+
+```{r}
+df_scores_cso <- readr::read_tsv(file.path(datadir,
+                                           "scores_cso.tsv"))
+```
+
+```{r}
+
+#' Generate confusion matrix
+#'
+#' @param df_cso A data.frame containing actual and predicted cancer labels.
+#' @param vec_labels The vector of tissue labels.
+#'
+#' @return A list containing:
+#'    * plot = Confusion matrix with accuracy and precision annotated along the top
+#'             and right hand sides, respectively.
+#'    * smry = A string containing overall CSO accuracy.
+#' @export
+make_confusion_matrix <- function(df_cso,
+                                  vec_labels) {
+
+  # Checks.
+  require_columns(df_cso, c("actual_label",
+                            "predicted_label",
+                            "count"))
+  stopifnot(identical(sort(vec_labels),
+                      sort(unique(vec_labels))))
+  stopifnot(all(df_cso$actual_label %in% vec_labels))
+  stopifnot(all(df_cso$predicted_label %in% vec_labels))
+
+
+  df_cso <- df_cso %>%
+    dplyr::select(actual_label, predicted_label, count)
+
+  ### 1) Generate summary data for each Predicted/Actual label combination.
+
+  # Iterate through all Predicted/Actual label combinations.
+  ls_df_rows <- list()
+  for (wh_pred_label in vec_labels) {
+
+    # Get samples predicted to be this label.
+    df_pred <- df_cso %>%
+      dplyr::filter(predicted_label == wh_pred_label)
+
+    n_pred <- sum(df_pred$count)
+
+    for (wh_actual_label in vec_labels) {
+
+      n_predicted_correct <- df_pred %>%
+        dplyr::filter(actual_label == wh_actual_label) %>%
+        dplyr::pull(count) %>%
+        sum()
+
+      # frac_predicted_correct is the fraction of the predicted samples
+      # that are actually this label.
+      if (n_pred == 0) {
+        frac_predicted_correct <- 0
+      } else {
+        frac_predicted_correct <- n_predicted_correct/n_pred
+      }
+
+      # Create string w/ number of samples to display in confusion matrix cell.
+      if (n_predicted_correct == 0) {
+        n_disp <- ""
+      } else {
+        n_disp <- as.character(round(n_predicted_correct, 1))
+      }
+
+      # Determine whether this actual/predicted pair is correct.
+      if (wh_actual_label == wh_pred_label) {
+        border_color <- "black"
+        is_correct <- TRUE
+      } else {
+        is_correct <- FALSE
+        if (n_predicted_correct == 0) {
+          border_color <- "transparent"
+        } else {
+          border_color <- "gray"
+        }
+      }
+
+      # Data.frame of results stored in list.
+      ls_df_rows[[length(ls_df_rows) + 1]] <-
+        data.frame(actual_label = wh_actual_label,
+                   predicted_label = wh_pred_label,
+                   n = n_predicted_correct,
+                   n_disp = n_disp,
+                   frac_predicted_correct = frac_predicted_correct,
+                   border_color = border_color,
+                   is_correct = is_correct,
+                   stringsAsFactors = FALSE)
+    }
+  }
+
+  # Collapse list of results into single data.frame.
+  df_conf_matrix_annot_long <- dplyr::bind_rows(ls_df_rows)
+
+  # Make sure all samples have been accounted for.
+  stopifnot(sum(df_conf_matrix_annot_long$n) == sum(df_cso$count))
+
+  # Get the sample count of each actual/predicted_label for axes.
+  df_pred_labels_n <- df_conf_matrix_annot_long %>%
+    dplyr::group_by(predicted_label) %>%
+    dplyr::summarize(total = sum(n)) %>%
+    dplyr::mutate(predicted_label_n = sprintf("%s (%g)", predicted_label, total))
+  df_actual_labels_n <- df_conf_matrix_annot_long %>%
+    dplyr::group_by(actual_label) %>%
+    dplyr::summarize(total = sum(n)) %>%
+    dplyr::mutate(actual_label_n = sprintf("%s (%g)", actual_label, total))
+
+  # Order the actual and predicted label counts the same as vec_labels.
+  vec_actual_label_n_order <- df_actual_labels_n %>%
+    dplyr::mutate(actual_label = factor(actual_label,
+                                        levels = vec_labels)) %>%
+    dplyr::arrange(actual_label) %>%
+    dplyr::pull(actual_label_n)
+  vec_pred_label_n_order <- df_pred_labels_n %>%
+    dplyr::mutate(predicted_label = factor(predicted_label,
+                                           levels = vec_labels)) %>%
+    dplyr::arrange(predicted_label) %>%
+    dplyr::pull(predicted_label_n)
+
+  # Add in "predicted_label_n" and "actual_label_n" columns.
+  df_conf_matrix <-
+    dplyr::inner_join(df_conf_matrix_annot_long,
+                      df_pred_labels_n %>%
+                        dplyr::select(predicted_label,
+                                      predicted_label_n),
+                      by = "predicted_label") %>%
+    dplyr::inner_join(df_actual_labels_n %>%
+                        dplyr::select(actual_label,
+                                      actual_label_n),
+                      by = "actual_label")
+  # Make sure all rows were retained.
+  stopifnot(nrow(df_conf_matrix_annot_long) ==
+              nrow(df_conf_matrix))
+
+  ### 2) Generate secondary axes data for precision (row) and
+  ###    accuracy (column) labels for the right side/top of plot, respectively.
+
+  df_prec_labels <- df_conf_matrix %>%
+    dplyr::group_by(predicted_label_n) %>%
+    dplyr::summarize(correct = sum(n[is_correct]),
+                     total = sum(n)) %>%
+    dplyr::mutate(prec_col_value = ifelse(total == 0, NA, correct / total * 100)) %>%
+    dplyr::mutate(prec_col_format = sprintf("%.1f%% (%g/%g)",
+                                            prec_col_value,
+                                            correct,
+                                            total)) %>%
+    dplyr::ungroup()
+
+  df_acc_labels <- df_conf_matrix %>%
+    dplyr::group_by(actual_label_n) %>%
+    dplyr::summarize(correct = sum(n[is_correct]),
+                     total = sum(n)) %>%
+    dplyr::mutate(acc_col_value = ifelse(total == 0, NA, correct / total * 100)) %>%
+    dplyr::mutate(acc_col_format = sprintf("%.1f%% (%g/%g)",
+                                           acc_col_value,
+                                           correct,
+                                           total)) %>%
+    dplyr::ungroup()
+
+  # Replace 0 count row/column labels with '-'.
+  prec_0_count_rows <- grep("NA", df_prec_labels$prec_col_format)
+  df_prec_labels$prec_col_format[prec_0_count_rows] <- "-"
+
+  acc_0_count_rows <- grep("NA", df_acc_labels$acc_col_format)
+  df_acc_labels$acc_col_format[acc_0_count_rows] <- "-"
+
+  # Order the confusion matrix & labels according to previously determined order.
+  df_conf_matrix$actual_label_n <- factor(df_conf_matrix$actual_label_n,
+                                          levels = vec_actual_label_n_order)
+  df_conf_matrix$predicted_label_n <- factor(df_conf_matrix$predicted_label_n,
+                                             levels = vec_pred_label_n_order)
+
+  df_acc_labels$actual_label_n <- factor(df_acc_labels$actual_label_n,
+                                         levels = vec_actual_label_n_order)
+  df_prec_labels$predicted_label_n <- factor(df_prec_labels$predicted_label_n,
+                                             levels = vec_pred_label_n_order)
+
+  ### 3) Make subtitle with overall accuracy/precision (which are the same for the
+  ###    full set of TPs).
+  n_total <- sum(df_conf_matrix$n)
+  n_correct <- df_conf_matrix %>%
+    dplyr::filter(is_correct) %>%
+    dplyr::pull(n) %>%
+    sum()
+  subtitle <- sprintf("Overall: %.1f%% (%g/%g)",
+                      n_correct * 100/n_total,
+                      n_correct,
+                      n_total)
+  smry_accuracy <- tibble::tibble(
+    n_correct = n_correct,
+    n_total = n_total,
+    prec_overall = n_correct * 100/n_total)
+
+  ### 4) Make confusion matrix plot.
+  plt <- df_conf_matrix %>%
+    dplyr::mutate(border_size = "none") %>%
+    ggplot2::ggplot(ggplot2::aes(x = as.numeric(actual_label_n),
+                                 y = as.numeric(predicted_label_n))) +
+    ggplot2::geom_tile(ggplot2::aes(fill = frac_predicted_correct,
+                                    color = as.factor(border_color),
+                                    size = border_size),
+                       width = 0.9, height = 0.9) +
+    ggplot2::coord_fixed() +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)) +
+    ggplot2::scale_fill_gradient(
+      low = "lightgray",
+      high = "lightcoral",
+      na.value = "lightgray") +
+    ggplot2::labs(
+      subtitle = subtitle,
+      x = "Actual",
+      y = "Predicted",
+      fill = "Prop. of\nPredicted") +
+    ggplot2::ggtitle("") +
+    ggplot2::geom_text(ggplot2::aes(label = n_disp))  +
+    ggplot2::scale_color_manual(
+      values = c("black", "gray", "transparent"),
+      breaks = c("black", "gray", "transparent"),
+      limits = c("black", "gray", "transparent"),
+      labels = c("none", "none", "none"),
+      guide = FALSE) +
+    ggplot2::scale_size_manual(
+      values = 0.4,
+      breaks = "none",
+      limits =  "none",
+      guide = FALSE)
+
+  ### 5) Format primary and secondary axes.
+
+  # Define y-axes.
+  df_y_axis_vals <- df_prec_labels %>%
+    dplyr::select(predicted_label_n,   # primary
+                  prec_col_format) %>% # secondary
+    unique() %>%
+    dplyr::arrange(predicted_label_n)
+  pri_axis_vals_y <- df_y_axis_vals %>%
+    dplyr::pull(predicted_label_n)
+  sec_axis_vals_y <- df_y_axis_vals %>%
+    dplyr::pull(prec_col_format)
+
+  # Define x-axes.
+  df_x_axis_vals <- df_acc_labels %>%
+    dplyr::select(actual_label_n,      # primary
+                  acc_col_format) %>%  # secondary
+    unique() %>%
+    dplyr::arrange(actual_label_n)
+  pri_axis_vals_x <- df_x_axis_vals %>%
+    dplyr::pull(actual_label_n)
+  sec_axis_vals_x <- df_x_axis_vals %>%
+    dplyr::pull(acc_col_format)
+
+  # x and y limits.
+  y_range <- range(as.numeric(pri_axis_vals_y))
+  y_pad <- 0.5
+  y_limits <- y_range + c(-y_pad, y_pad)
+  x_range <- range(as.numeric(pri_axis_vals_x))
+  x_pad <- 0.5
+  x_limits <- x_range + c(-x_pad, x_pad)
+
+  # Add to plot.
+  plt <- plt +
+    ggplot2::scale_y_continuous(
+      limits = y_limits,
+      expand = c(0, 0),
+      breaks = 1:length(pri_axis_vals_y),
+      labels = pri_axis_vals_y,
+      sec.axis = ggplot2::sec_axis(~.,
+                                   breaks = 1:length(sec_axis_vals_y),
+                                   labels = sec_axis_vals_y)) +
+    ggplot2::scale_x_continuous(
+      limits = x_limits,
+      expand = c(0, 0),
+      breaks = 1:length(pri_axis_vals_x),
+      labels = pri_axis_vals_x,
+      sec.axis = ggplot2::sec_axis(~.,
+                                   breaks = 1:length(sec_axis_vals_x),
+                                   labels = sec_axis_vals_x))
+
+  # Adjust the column accuracies for better horizontal alignment.
+  plt <- plt +
+    ggplot2::theme(axis.text.x.top = ggplot2::element_text(angle = 45,
+                                                           hjust = 0))
+  return(list(plot = plt,
+              smry = smry_accuracy))
+}
+```
+
+```{r}
+# Filter to subset of predicted cancers (TPs only) in all 3 assays.
+df_cso <- df_scores_cso %>%
+  dplyr::filter(n_assays_predict_cancer == 3)
+
+# Helper function to make list of confusion matrices for each classifier.
+make_confusion_matrices <- function(df_cso) {
+  split(df_cso,
+        df_cso$classifier_name) %>%
+    lapply(function(df) {
+      df %>%
+        collapse_cancer_types_to_other() %>%
+        dplyr::count(actual_label = cancer_type_w_other,
+                     predicted_label = label_1st_w_other,
+                     name = "count") %>%
+        make_confusion_matrix(vec_labels = vec_score_cols)
+    })
+}
+
+# Get joint-detected confusion matrices.
+ls_confmats <- make_confusion_matrices(df_cso)
+```
+
+### WG Methylation
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats[["WG methylation"]]$plot
+```
+
+### SCNA
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats[["SCNA"]]$plot
+```
+
+### SNV-WBC
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats[["SNV-WBC"]]$plot
+```
+
+## Figure 5: cTAF vs stage by cancer type (top 3 and 'Remaining' cancer types)
+
+```{r fig.width = 12, fig.asp = 1}
+
+#' Generate plot of circulating tumor allele fraction (cTAF) by stage and cancer_type
+#'
+#' @param score_and_ctaf A data.frame containing per-sample cTAF estimates.
+#' @param df_scores_cnc A data.frame of scores.
+#' @param flag_collapse_tissue_for_ctaf_plot A boolean where TRUE = collapse cancer types
+#'        into Breast, Lung, Colon/Rectum and 'Remaining' (containing all other cancer_types).
+#' @param y_val_text The value along the y-axis to display the sample counts.
+#'
+#' @return A ggplot of box plots showing cTAF per stage (x-axis values) facetted by cancer_type,
+#'         with sample counts X/Y with X equal to the number of samples with tissue and Y
+#'         equal to the total number of samples.
+#' @export
+make_ctaf_vs_stage_plot <- function(score_and_ctaf,
+                                    df_scores_cnc,
+                                    flag_collapse_tissue_for_ctaf_plot,
+                                    y_val_text = 2) {
+
+  # Confirm samples from LOD computation are subset of evaluation set.
+  stopifnot(all(score_and_ctaf$participant_id %in%
+                  unique(df_scores_cnc$participant_id)))
+
+  # Convert called_positive to string.
+  df_ctaf_plot <- score_and_ctaf %>%
+    dplyr::mutate(called_positive = ifelse(called_positive == 0,
+                                           "no_detect",
+                                           "yes_detect"))
+
+  # Join with df_scores_cnc to get counts of pts without tissue (i.e.,
+  # those that have no cTAF estimate).
+  df_scores_cnc_w_ctaf <- df_ctaf_plot %>%
+    dplyr::select(classifier_name, participant_id, called_positive, train_or_valid) %>%
+    dplyr::full_join(
+      df_scores_cnc %>%
+        dplyr::filter(cancer_type != "Non-cancer") %>%
+        dplyr::filter(stringr::str_detect(classifier_name, "methylation")) %>%
+        dplyr::select(classifier_name, participant_id, cstage, cancer_type, train_or_valid),
+      by = c("participant_id", "classifier_name", "train_or_valid")) %>%
+    tidyr::replace_na(list(called_positive = "no_tissue"))
+
+  # Confirm each participant_id is unique.
+  stopifnot(
+    identical(df_scores_cnc_w_ctaf %>%
+                dplyr::count(participant_id) %>%
+                dplyr::count(n) %>%
+                nrow(), 1L))
+
+  # Option to collapse low abundance cancer types into 'Remaining'.
+  if (flag_collapse_tissue_for_ctaf_plot) {
+    df_ctaf_plot <- df_ctaf_plot %>%
+      collapse_cancer_type_to_remaining()
+
+    df_scores_cnc_w_ctaf <- df_scores_cnc_w_ctaf %>%
+      collapse_cancer_type_to_remaining()
+  }
+
+  # Determine sample counts (for "X/Y" string above each stage).
+  df_ctaf_counts <- df_scores_cnc_w_ctaf %>%
+    dplyr::count(cancer_type, cstage, called_positive) %>%
+    dplyr::group_by(cancer_type) %>%
+    tidyr::complete(cancer_type, cstage, called_positive, fill = list(n = 0L)) %>%
+    tidyr::pivot_wider(names_from = "called_positive",
+                       values_from = "n",
+                       values_fill = 0L) %>%
+    dplyr::mutate(
+      n_total = no_tissue + no_detect + yes_detect,
+      n_w_tissue = no_detect + yes_detect,
+      info = paste0(n_w_tissue, "/", n_total)) %>%
+    dplyr::select(cancer_type, cstage, info) %>%
+    dplyr::mutate(n_label = info,
+                  called_positive = NA_character_,
+                  train_or_valid = NA_character_,
+                  ctaf = y_val_text) # This is y value of text on cfdna_ctaf axis.
+
+  vec_shapes <- c(21, 25)
+  p_out <-
+    df_ctaf_plot %>%
+    ggplot(aes(x = cstage, y = ctaf, group = cstage)) +
+    geom_boxplot(outlier.shape = NA, color = "black", fill = "white", show.legend = FALSE) +
+    geom_point(position = position_jitter(height = 0, seed = 2021),
+               fill = "white", color = "black", shape = 21) +
+    geom_hline(yintercept = y_val_text*1.25, color = NA) +  # blank line helps with formatting
+    geom_text(data = df_ctaf_counts,
+              aes(label = n_label),
+              size = 3, vjust = 1) +
+    guides(guides(fill = guide_legend(override.aes = list(shape = 21)))) +
+    scale_y_log10() +
+    theme(legend.position = "none") +
+    labs(x = "Stage",
+         y = "Circulating Tumor Allele Fraction (cTAF)")
+
+  return(p_out)
+}
+
+plot_ctaf_vs_stage_collapse <- make_ctaf_vs_stage_plot(score_and_ctaf,
+                                                       df_scores_cnc,
+                                                       flag_collapse_tissue_for_ctaf_plot = TRUE,
+                                                       y_val_text = 2) +
+  facet_wrap(~cancer_type, ncol = 2)
+```
+
+```{r fig.asp = 1}
+plot_ctaf_vs_stage_collapse
+```
+
+# Supplementary Figures
+
+## Supplementary Figure 1: Detection by stage
+
+```{r fig.width = 8, fig.asp = .8}
+
+# Calculate sensitivity by stage and classifier, excluding clinical classifier.
+df_detection_by_stage <- df_scores_cnc %>%
+  dplyr::filter(cnc_label_actual == "cancer",
+                !stringr::str_detect(classifier_name, "Clinical")) %>%
+  dplyr::count(classifier_name, train_or_valid, cnc_label_predict, cstage) %>%
+  tidyr::pivot_wider(names_from = cnc_label_predict,
+                     values_from = n,
+                     values_fill = 0L) %>%
+  dplyr::group_by(classifier_name, train_or_valid, cstage) %>%
+  dplyr::mutate(subtotal_cstage = cancer + non_cancer,
+                sensitivity = cancer/subtotal_cstage,
+                ci_lo = add_binom_confints(cancer, subtotal_cstage, "lcb"),
+                ci_hi = add_binom_confints(cancer, subtotal_cstage, "ucb"),
+                pretty = sprintf("%0.1f%% [%0.1f-%0.1f]%%  (%d/%d)",
+                                 100*sensitivity, 100*ci_lo, 100*ci_hi,
+                                 cancer, subtotal_cstage)) %>%
+  dplyr::ungroup()
+
+# Order classifiers by overall (train + validation) sensitivity.
+vec_classifier_order_sens <- df_detection_by_stage %>%
+  dplyr::group_by(classifier_name) %>%
+  dplyr::summarize(cancer = sum(cancer),
+                   subtotal = sum(subtotal_cstage),
+                   overall_detection = cancer/subtotal) %>%
+  dplyr::arrange(overall_detection) %>%
+  dplyr::pull(classifier_name)
+
+# Plot results with red horizontal dashed lines for WG methylation.
+p_detection_by_stage <- df_detection_by_stage %>%
+  dplyr::mutate(is_wgbs = ifelse(stringr::str_detect(classifier_name, "methylation"),
+                                 "meth", "other"),
+                classifier_name = factor(classifier_name,
+                                         levels = vec_classifier_order_sens)) %>%
+  ggplot(aes(x = classifier_name, y = sensitivity, color = is_wgbs)) +
+  geom_hline(data = df_detection_by_stage %>%
+               dplyr::filter(stringr::str_detect(classifier_name, "methylation")),
+             aes(yintercept = sensitivity),
+             linetype = "dashed", color = "orangered") +
+  geom_errorbar(aes(ymin = ci_lo, ymax = ci_hi), size = 0.5, width = 0.2) +
+  geom_point(fill = "white", shape = 21) +
+  facet_grid(train_or_valid~cstage, scales = "free") +
+  scale_color_manual(values = c("orangered", "black")) +
+  guides(color = FALSE) +
+  ylim(0, 1) +
+  labs(x = "") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust = 1))
+
+print(p_detection_by_stage)
+```
+
+## Supplementary Figure 2: Limit of detection (Training and Validation)
+
+```{r}
+p_lod_all <- make_lod_whisker_plot(df_lod, restrict_to_validation = FALSE)
+print(p_lod_all)
+```
+
+## Supplementary Figure 3: Upset plots of detection across 3 assay
+
+```{r fig.width = 10}
+# Generate True and False Positive UpSet plots for
+# SNV-WBC, SCNA-WBC and WG methylation classifiers
+upset_plot_of_detections <-
+  function(label_actual = c("cancer", "non_cancer"),
+           wh_trainvalid) {
+
+    label_actual <- match.arg(label_actual)
+
+    # Subset to true positives or false positives (depending on label_actual).
+    df_scores_upset <-
+      df_scores_cnc %>%
+      dplyr::filter(classifier_name %in% c("SNV-WBC", "SCNA-WBC", "WG methylation"),
+                    train_or_valid == wh_trainvalid,
+                    cnc_label_actual == label_actual,
+                    cnc_label_predict == "cancer") %>%
+      dplyr::select(classifier_name, participant_id, cnc_label_predict)
+
+    # Split up predictions by classifier.
+    ls_scores_upset <-
+      split(df_scores_upset,
+            df_scores_upset$classifier_name) %>%
+      lapply("[[", "participant_id")
+
+    # Make UpSet plot.
+    vec_order <- sort(names(ls_scores_upset))
+    upset_fmt <- UpSetR::fromList(ls_scores_upset)
+    p_upset <- UpSetR::upset(upset_fmt, order.by = "freq",
+                             sets = vec_order,
+                             nsets = length(ls_scores_upset), nintersects = NA,
+                             mainbar.y.label = paste0(label_actual, ", ", wh_trainvalid),
+                             keep.order = TRUE)
+    return(p_upset)
+  }
+```
+
+```{r}
+# Display and save four combinations of UpSet plots.
+#
+# Helper function for saving plots below.
+tp_or_fp <- function(c_or_n) {
+  if (c_or_n == "cancer") {
+    return("TruePositives")
+  } else {
+    return("FalsePositives")
+  }
+}
+upset_w <- 4
+upset_h <- 3
+```
+
+### True Positives, train
+
+```{r fig.width = 5}
+c_or_n <- "cancer"
+t_or_v <- "train"
+fname <- paste0("upset_", tp_or_fp(c_or_n), "_", t_or_v, ".pdf")
+
+# Display plot.
+upset_plot_of_detections(c_or_n, t_or_v)
+
+# Save to file.
+if (write_output) {
+  local_path <- file.path(outdir, fname)
+  pdf(local_path, onefile = FALSE, width = upset_w, height = upset_h)
+  upset_plot_of_detections(c_or_n, t_or_v)
+  dev.off();
+}
+```
+
+### True Positives, validation
+
+```{r fig.width = 5}
+c_or_n <- "cancer"
+t_or_v <- "valid"
+fname <- paste0("upset_", tp_or_fp(c_or_n), "_", t_or_v, ".pdf")
+
+# Display plot.
+upset_plot_of_detections(c_or_n, t_or_v)
+
+# Save to file.
+if (write_output) {
+  local_path <- file.path(outdir, fname)
+  pdf(local_path, onefile = FALSE, width = upset_w, height = upset_h)
+  upset_plot_of_detections(c_or_n, t_or_v)
+  dev.off();
+}
+```
+
+### False Positives, train
+
+```{r fig.width = 5}
+c_or_n <- "non_cancer"
+t_or_v <- "train"
+fname <- paste0("upset_", tp_or_fp(c_or_n), "_", t_or_v,  ".pdf")
+
+# Display plot.
+upset_plot_of_detections(c_or_n, t_or_v)
+
+# Save to File.
+if (write_output) {
+  local_path <- file.path(outdir, fname)
+  pdf(local_path, onefile = FALSE, width = upset_w, height = upset_h)
+  upset_plot_of_detections(c_or_n, t_or_v)
+  dev.off();
+}
+```
+
+### False Positives, validation
+
+```{r fig.width = 5}
+c_or_n <- "non_cancer"
+t_or_v <- "valid"
+fname <- paste0("upset_", tp_or_fp(c_or_n), "_", t_or_v, ".pdf")
+
+# Display plot.
+upset_plot_of_detections(c_or_n, t_or_v)
+
+# Save to File.
+if (write_output) {
+  local_path <- file.path(outdir, fname)
+  pdf(local_path, onefile = FALSE, width = upset_w, height = upset_h)
+  upset_plot_of_detections(c_or_n, t_or_v)
+  dev.off();
+}
+```
+
+## Supplementary Figure 4: UMAP visualization of scores used in pan-feature classifier
+
+```{r}
+umap_df_training <- readr::read_tsv(file.path(datadir,
+                                              "umap_df_training.tsv"))
+```
+
+```{r fig.width = 6, fig.asp = 1}
+# Join UMAP axes with WG methylation detection status.
+umap_df_training_cnc <- umap_df_training %>%
+  dplyr::inner_join(
+    df_scores_cnc %>%
+      dplyr::filter(classifier_name == "WG methylation",
+                    train_or_valid == "train") %>%
+      assertr::verify(nrow(.) == nrow(umap_df_training)) %>%
+      dplyr::mutate(label_cnc = dplyr::case_when(
+        cnc_label_actual == "cancer" & cnc_label_predict == "cancer" ~ "True Positives",
+        cnc_label_actual == "cancer" & cnc_label_predict == "non_cancer" ~ "False Negatives",
+        cnc_label_actual == "non_cancer" & cnc_label_predict == "cancer" ~ "False Positives",
+        cnc_label_actual == "non_cancer" & cnc_label_predict == "non_cancer" ~ "True Negatives")
+      ) %>%
+      assertr::verify(!any(label_cnc == "Error")) %>%
+      dplyr::mutate(
+        label_cnc = factor(label_cnc,
+                           levels = c("True Positives", "True Negatives", "False Negatives",
+                                      "False Positives"))) %>%
+      dplyr::arrange(label_cnc) %>%
+      dplyr::select(participant_id, label_cnc),
+    by = "participant_id")
+
+# 2x2 plot of UMAP results.
+umap_plot <- umap_df_training_cnc %>%
+  dplyr::mutate(label_cnc_for_facet = label_cnc) %>%
+  ggplot(aes(x = umap_1, y = umap_2, shape = label_cnc)) +
+  geom_point(data = umap_df_training_cnc %>%
+               dplyr::select(umap_1, umap_2, label_cnc), color = "gray") +
+  geom_point(aes(color = label_cnc), color = "royalblue") +
+  scale_shape_manual(values = c(4, 21, 4, 21)) +
+  labs(color = NULL, shape = NULL,
+       x = "UMAP axis 1",
+       y = "UMAP axis 2") +
+  facet_wrap(~label_cnc_for_facet, ncol = 2) +
+  theme(legend.position = "none")
+
+print(umap_plot)
+```
+
+## Supplementary Figure 5: CSO confusion matrices, independent detection
+
+```{r}
+ls_confmats_all <-
+  make_confusion_matrices(df_scores_cso)
+```
+
+### WG methylation
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats_all[["WG methylation"]]$plot
+```
+
+### SCNA
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats_all[["SCNA"]]$plot
+```
+
+### SNV-WBC
+
+```{r fig.width = 6, fig.asp = 1}
+ls_confmats_all[["SNV-WBC"]]$plot
+```
+
+## Supplementary Figure 6: cTAF by stage and cancer type (all cancer types)
+
+```{r fig.height = 11, fig.width = 6}
+plot_ctaf_vs_stage_full <- make_ctaf_vs_stage_plot(score_and_ctaf,
+                                                   df_scores_cnc,
+                                                   flag_collapse_tissue_for_ctaf_plot = FALSE,
+                                                   y_val_text = 50) +
+  facet_wrap(~cancer_type, ncol = 3)
+plot_ctaf_vs_stage_full
+```
+
+## Supplementary Figure 7: WG Methylation score vs cTAF fit
+
+```{r plt_p_cancer, fig.width=6, fig.height=5}
+
+# Data.frame for monotonic fit of scores vs cTAF using scam package.
+df_mono <- score_and_ctaf %>%
+  dplyr::filter(classifier_name == "WG methylation",
+                train_or_valid == "valid") %>%
+  dplyr::select(ctaf, p_cancer, called_positive) %>%
+  dplyr::mutate(detected = ifelse(called_positive == 1, TRUE, FALSE))
+
+stopifnot(all(df_mono$ctaf > 0))
+
+# Range of independent variable.
+vec_min_max_ctaf_for_fit <- range(df_mono$ctaf)
+
+# Pad y limits with 5% of range.
+y_range <- range(df_mono$p_cancer)
+plot_ylims <- c(-0.05, 1.05)
+
+# Define data.frame for storing predictions for each input value
+# and a set of uniformly spaced points along range.  Define
+# "row_num_for_joining" for combining predictions with input data.
+df_mono_fit <- df_mono %>%
+  dplyr::arrange(ctaf) %>%
+  dplyr::mutate(row_num_for_joining = dplyr::row_number())
+
+n_samples <- nrow(df_mono_fit)
+
+# Predictions along uniformly log-spaced set of values.
+vec_predict_at_plotting_ctafs <- c(
+  10 ** seq(log10(vec_min_max_ctaf_for_fit[1]),
+            log10(vec_min_max_ctaf_for_fit[2]),
+            length = 1000))
+
+vec_predict_at_input_ctafs <- df_mono_fit$ctaf
+
+df_predict_ctaf_at <- dplyr::bind_rows(
+  data.frame(ctaf = vec_predict_at_plotting_ctafs,
+             stringsAsFactors = FALSE) %>%
+    dplyr::mutate(row_num_for_joining = NA),
+  data.frame(ctaf = vec_predict_at_input_ctafs,
+             stringsAsFactors = FALSE) %>%
+    dplyr::mutate(row_num_for_joining = dplyr::row_number()))
+
+# Fit monotonic curve.
+fit_model <- scam::scam(p_cancer ~ s(log10(ctaf),
+                                     bs = "mpi",
+                                     m = 2),
+                        family = binomial(link = "logit"),
+                        data = df_mono_fit,
+                        optimizer = "bfgs")
+
+# Get fit predictions.
+df_predict_ctaf_at$p_cancer_fit <-
+  as.numeric(predict(fit_model,
+                     newdata = df_predict_ctaf_at,
+                     type = "response"))
+
+# Combine input data with predictions.
+df_mono_fit <- dplyr::left_join(
+  df_mono_fit,
+  df_predict_ctaf_at %>%
+    dplyr::filter(!is.na(row_num_for_joining)) %>%
+    dplyr::select(row_num_for_joining,
+                  p_cancer_fit),
+  by = "row_num_for_joining")
+
+# Ensure that each input sample has exactly one fit p_cancer that was joined.
+stopifnot(!any(is.na(df_mono_fit$p_cancer_fit)))
+stopifnot(identical(df_mono_fit$row_num_for_joining,
+                    1:n_samples))
+
+# Define label with variance explained in upper left hand corner of plot.
+original_variance <-
+  sum((df_mono_fit[["p_cancer"]] -
+         mean(df_mono_fit[["p_cancer"]])) ** 2)
+unexplained_variance <-
+  sum((df_mono_fit[["p_cancer"]] -
+         df_mono_fit[["p_cancer_fit"]]) ** 2)
+prop_variance_explained_val <- 1 - unexplained_variance / original_variance
+df_variances <-
+  tibble::tibble(x = vec_min_max_ctaf_for_fit[1],
+                 y = plot_ylims[2],
+                 var_explaned_annot = sprintf("Variance explained: %0.1f%%",
+                                              prop_variance_explained_val*100))
+
+# Plot.
+plt_var_valid <- ggplot2::ggplot() +
+  # Scatter points of observed values.
+  ggplot2::geom_point(data = df_mono_fit,
+                      mapping = ggplot2::aes(x = ctaf,
+                                             y = p_cancer,
+                                             color = detected,
+                                             shape = detected),
+                      alpha = 1) +
+  # Line of monotonic fit.
+  ggplot2::geom_line(data = df_predict_ctaf_at,
+                     mapping = ggplot2::aes(x = ctaf,
+                                            y = p_cancer_fit),
+                     color = "orange",
+                     linetype = "solid",
+                     size = 1.5) +
+  ggplot2::scale_y_continuous(limits = plot_ylims) +
+  ggplot2::scale_x_log10(
+    breaks = scales::trans_breaks("log10", function(x) 10^x),
+    labels = scales::trans_format("log10", scales::math_format(10^.x)),
+    limits = vec_min_max_ctaf_for_fit) +
+  ggplot2::annotation_logticks(sides = "b") +
+  ggplot2::labs(x = "Circulating Tumor Allele Fraction",
+                y = "WG Methylation Cancer Detection\nCancer signal strength") +
+  # Annotate the % variance explained by the monotonic fit.
+  ggplot2::geom_text(data = df_variances,
+                     mapping = ggplot2::aes(x = x,
+                                            y = y,
+                                            label = var_explaned_annot),
+                     color = "black",
+                     hjust = 0,
+                     vjust = 1,
+                     inherit.aes = FALSE) +
+  ggplot2::scale_color_manual(
+    values = c("royalblue", "black"),
+    breaks = c(TRUE, FALSE)) +
+  ggplot2::scale_shape_manual(
+    values = c(21, 19),
+    breaks = c(TRUE, FALSE))
+
+plt_var_valid
+```
+
+## Supplementary Figure 8: Clonal hematopoesis
+
+### Panel A: WBC vs cfDNA variant MAFs
+
+```{r fig.width = 6.5, fig.height=7.5}
+variant_data_hexbin <- readr::read_tsv(file.path(datadir, "variant_data_hexbin.tsv"))
+
+lims <- c(1e-4, 1)*100
+# Subplot comparing SNV allele fraction in WBC gDNA vs plasma cfDNA.
+# Note that source data contains proportions from 0 to 1 whereas
+# plot is on percentage scale.
+
+plt_chip_hex <- variant_data_hexbin %>%
+  ggplot(aes(x = 100*mean_af_cfdna, y = 100*mean_af_gdna, fill = n_variants)) +
+  geom_hex(stat = "identity") +
+  geom_abline(intercept = 0, linetype = "dashed") +
+  scale_x_log10(labels = function(x) sprintf("%g", x)) +
+  scale_y_log10(labels = function(x) sprintf("%g", x)) +
+  annotation_logticks(sides = "lb") +
+  xlab("VAF in cfDNA (%)") +
+  ylab("VAF in WBC gDNA (%)") +
+  scale_fill_gradient(high = "#132B43", low = "#56B1F7", name = "# SNVs", na.value = NA) +
+  coord_cartesian(xlim = lims, ylim = lims) +
+  theme(axis.text = element_text(size = 18),
+        legend.position = c(.2, .95),
+        legend.justification = c("right", "top"),
+        legend.box.just = "right",
+        legend.margin = margin(6, 6, 6, 6),
+        legend.background = element_rect(fill = alpha("grey", 0.02))
+  )
+
+# Subplot containing histogram of SNV allele fractions in cfDNA.
+plt_chip_histo <- variant_data_hexbin %>%
+  dplyr::group_by(mean_af_cfdna) %>%
+  dplyr::summarise(n_variants = sum(n_variants),
+                   .groups = "drop") %>%
+  ggplot(aes(x = mean_af_cfdna*100,
+             y = n_variants)) +
+  geom_bar(fill = "#3182bd", stat = "identity", color = "#3182bd") +
+  scale_x_log10(labels = function(x) sprintf("%g", x)) +
+  ylab("# cfDNA variants\n") +
+  theme(axis.text = element_text(size = 18),
+        axis.text.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.title.x = element_blank(),
+        panel.grid.minor.y = element_blank()) +
+  coord_cartesian(xlim = lims)
+
+# Combine subplots.
+g_histo <- ggplotGrob(plt_chip_histo)
+g_hex <- ggplotGrob(plt_chip_hex)
+
+maxWidth <- grid::unit.pmax(g_histo$widths[2:5], g_hex$widths[2:5])
+g_histo$widths[2:5] <- as.list(maxWidth)
+g_hex$widths[2:5] <- as.list(maxWidth)
+
+plt_chip_wbc_v_cfdna <- gridExtra::grid.arrange(g_histo, g_hex,
+                                                ncol = 1, nrow = 2, heights = c(1, 4))
+```
+
+### Panel B: Mutation recurrence across participants
+
+```{r}
+n_pts_per_variant <- readr::read_tsv(file.path(datadir, "n_pts_per_variant.tsv"))
+
+# Group together mutations found in more than this number of
+# participants into a single group.
+n_single_group_cutoff <- 3
+
+# Table of recurrent nonsynonymous variants.
+recurrence_ns_his <- n_pts_per_variant %>%
+  dplyr::count(n_pts_w_snv, name = "n_snvs") %>%
+  dplyr::mutate(n_pts_w_snv_mod =
+                  ifelse(n_pts_w_snv <= n_single_group_cutoff,
+                         as.character(n_pts_w_snv),
+                         paste0((n_single_group_cutoff + 1), "-", max(n_pts_w_snv)))) %>%
+  dplyr::group_by(n_pts_w_snv_mod) %>%
+  dplyr::summarise(n_snvs_mod = sum(n_snvs),
+                   .groups = "drop") %>%
+  dplyr::mutate(f_pts_w_snv_mod = n_snvs_mod/sum(n_snvs_mod),
+                f_pts_w_snv_mod_pretty = sprintf("%0.1f%% (%d)",
+                                                 100*f_pts_w_snv_mod, n_snvs_mod))
+
+plt_chip_recurrence <- recurrence_ns_his %>%
+  ggplot(aes(x = n_pts_w_snv_mod,
+             y = f_pts_w_snv_mod*100,
+             label = f_pts_w_snv_mod_pretty)) +
+  geom_col(fill = "gray") +
+  geom_text(vjust = -1) +
+  ylim(0, 100) +
+  xlab("Number of Patients in which Mutation is Found") +
+  ylab("Proportion of Nonsynonymous Variants (%)")
+
+print(plt_chip_recurrence)
+```
+
+```{r}
+# Print fraction of non-synonymous SNVs that are private to single pt.
+f_pts_w_snv_mod_pretty_private <- recurrence_ns_his %>%
+  dplyr::mutate(f_pts_w_snv_mod_pretty =
+                  sprintf("%0.1f%% (%d of %d)",
+                          100*f_pts_w_snv_mod, n_snvs_mod, sum(n_snvs_mod))) %>%
+  dplyr::filter(n_pts_w_snv_mod == 1) %>%
+  dplyr::pull(f_pts_w_snv_mod_pretty)
+
+cat(paste0(
+  f_pts_w_snv_mod_pretty_private,
+  " of nonsynonymous SNVs in cfDNA that were matching in corresponding ",
+  "participant WBC were private to an individual participant.  \n"))
+```
+
+# Tables
+
+## Table 1: Mapping of assays, features and classifiers
+
+No code
+
+## Table 2: Demographic Table
+
+```{r}
+
+#' Tally participants by arbitrary clinical variable
+#'
+#' @param df_clin Clinical data.frame to be tallied by train/valid and cancer/non-cancer
+#'        status with optional additional breakdown by column 'my_var'.  If 'my_var' is
+#'        missing then all rows are tallied to determine the total counts.
+#' @param my_header_label An optional string that will be added as a header row. Default
+#'        is "-", in which case no header row added.
+#'
+#' @return A data.frame containing the tally of participants by Cancer/Non-cancer
+#'        and Training/Validation (columns) and optionally additional rows containing
+#'        the tally broken down further by column 'my_var'.
+#' @export
+tally_clin_by_var <- function(df_clin,
+                              my_header_label = "-") {
+
+  require_columns(df_clin,
+                  c("train_or_valid", "cancer_status"))
+  # If "my_var" was not previously defined by user and included as a column in df_clin,
+  # then define it as " " for each row, which will result in total counts for each column.
+  if (!("my_var" %in% names(df_clin))) {
+    df_clin_w_my_var <- df_clin %>%
+      dplyr::mutate(my_var = " ")
+  } else {
+    df_clin_w_my_var <- df_clin
+  }
+
+  df_tally <- df_clin_w_my_var %>%
+    dplyr::group_by(train_or_valid, cancer_status, my_var) %>%
+    dplyr::summarise(n = dplyr::n()) %>%
+    dplyr::group_by(train_or_valid, cancer_status) %>%
+    dplyr::mutate(n_total = sum(n),
+                  pretty = sprintf("%d (%d%%)", n, round(n/n_total*100))) %>%
+    dplyr::select(my_var, train_or_valid, cancer_status, pretty) %>%
+    tidyr::pivot_wider(names_from = c("train_or_valid", "cancer_status"),
+                       values_from = "pretty",
+                       values_fill = "") %>%
+    dplyr::select(my_var, dplyr::contains("train"), dplyr::contains("valid"))
+
+  # Optionally prepend with blank header row.
+  if (my_header_label != "-") {
+    df_hdr <- tibble::tibble(
+      my_var = my_header_label,
+      `train_Invasive Cancer` = " ",
+      `train_Non-cancer` = " ",
+      `valid_Invasive Cancer` = " ",
+      `valid_Non-cancer` = " ")
+
+    df_tally <- dplyr::bind_rows(df_hdr,
+                                 df_tally)
+  }
+  return(df_tally)
+}
+```
+
+```{r}
+# Total, N
+demo_total <- tally_clin_by_var(clin) %>%
+  dplyr::mutate(my_var = "Total (%)")
+
+# Age, mean +/- SD
+demo_age <- clin %>%
+  dplyr::group_by(train_or_valid, cancer_status) %>%
+  dplyr::summarise(age_mean = mean(age),
+                   age_sd = sd(age),
+                   pretty = sprintf("%d (%d)", round(age_mean), round(age_sd))) %>%
+  dplyr::select(train_or_valid, cancer_status, pretty) %>%
+  tidyr::pivot_wider(names_from = c("train_or_valid", "cancer_status"),
+                     values_from = "pretty",
+                     values_fill = "") %>%
+  dplyr::mutate(my_var = "age (sd)") %>%
+  dplyr::select(my_var, dplyr::contains("train"), dplyr::contains("valid"))
+
+# Sex (only report %Female)
+demo_sex <- clin %>%
+  dplyr::mutate(my_var = sex) %>%
+  tally_clin_by_var() %>%
+  dplyr::filter(my_var != "Male")
+
+# Race
+demo_racecat <- clin %>%
+  dplyr::mutate(my_var = race_cat) %>%
+  tally_clin_by_var(my_header_label = "Race/Ethnicity")
+
+# Age >50
+demo_agecat <- clin %>%
+  dplyr::mutate(my_var = ifelse(age_cat == "50+", "age 50+", "age <50")) %>%
+  tally_clin_by_var() %>%
+  dplyr::filter(my_var == "age 50+")
+
+# Smoking, % never smokers
+demo_smoking <- clin %>%
+  dplyr::mutate(my_var = ifelse(smk_cat == "Non-smoker",
+                                "Never-smoker", "Ever-smoker/Missing")) %>%
+  tally_clin_by_var(my_header_label = "Smoking status, n (%)")
+
+# BMI
+demo_bmi <- clin %>%
+  dplyr::mutate(my_var = bmi_cat) %>%
+  tally_clin_by_var(my_header_label = "Body Mass Index, n (%)")
+
+# Site region in US
+demo_site_region <- clin %>%
+  dplyr::mutate(my_var = site_region) %>%
+  tally_clin_by_var(my_header_label = "Site Region, n (%)")
+
+# Clinical stage
+demo_stage <- clin %>%
+  dplyr::mutate(my_var = cstage) %>%
+  tally_clin_by_var(my_header_label = "Cancer Stage, n (%)") %>%
+  dplyr::filter(my_var != "Non-cancer")
+
+# Diagnosis method
+demo_screen <- clin %>%
+  dplyr::mutate(my_var = dx_method) %>%
+  tally_clin_by_var(my_header_label = "Dx Method, n (%)") %>%
+  # remove NA (non-cancers)
+  dplyr::filter(!is.na(my_var))
+
+# Combine results
+dplyr::bind_rows(
+  demo_total,
+  demo_sex,
+  demo_age,
+  demo_agecat,
+  demo_racecat,
+  demo_smoking,
+  demo_bmi,
+  demo_site_region,
+  demo_stage,
+  demo_screen) %>%
+  pander::pander(caption = "CCGA1 demographic table")
+```
+
+## Table 3: Performance metrics at 98% Specificity
+
+```{r}
+# Sensitivity
+df_tpr %>%
+  dplyr::arrange(pos_rate) %>%
+  dplyr::select(classifier_name, train_or_valid, pos_rate_pretty) %>%
+  tidyr::pivot_wider(names_from = train_or_valid,
+                     values_from = pos_rate_pretty) %>%
+  dplyr::select(classifier_name,
+                `Training set` = train,
+                `Validation set` = valid) %>%
+  pander::pander(caption =
+                   "Sensitivity at 98% specificity (post-hoc) for train/valid for each classifier")
+
+# FPR (1- Specificity)
+df_fpr %>%
+  dplyr::arrange(pos_rate) %>%
+  dplyr::select(classifier_name, train_or_valid, pos_rate_pretty) %>%
+  tidyr::pivot_wider(names_from = train_or_valid,
+                     values_from = pos_rate_pretty) %>%
+  dplyr::select(classifier_name,
+                `Training set` = train,
+                `Validation set` = valid) %>%
+  # Since post-hoc cutoffs are used, all classifiers have the same specificity except
+  # the Clinical data classifier which has a slightly lower number of participants.
+  dplyr::mutate(classifier_name = ifelse(classifier_name == "Clinical data",
+                                         classifier_name,
+                                         "Other classifiers")) %>%
+  dplyr::distinct(classifier_name, `Training set`, `Validation set`) %>%
+  dplyr::filter(!is.na(`Training set`)) %>%
+  pander::pander(caption =
+                   "Observed false positive rate (post-hoc) for train/valid of the classifiers")
+```
+
+# Supplementary Tables
+
+## Supplementary Table 1: cTAF logistic regression with AIC
+
+```{r}
+vec_collapse_tissues <- c("Remaining", "Breast", "Lung", "Colon/Rectum")
+```
+
+```{r}
+# Restrict to methylation classifier and stages I-IV.
+# Treat stages as continuous variable (1, 2, 3, 4) in the regression.
+df_ctaf_wgmeth <- score_and_ctaf %>%
+  dplyr::filter(stringr::str_detect(classifier_name, "WG methylation"),
+                cstage %in% c("I", "II", "III", "IV")) %>%
+  dplyr::mutate(called_positive = factor(called_positive, c(0, 1)),
+                cstage_num = dplyr::case_when(cstage == "I" ~ 1,
+                                              cstage == "II" ~ 2,
+                                              cstage == "III" ~ 3,
+                                              cstage == "IV" ~ 4)) %>%
+  dplyr::select(cancer_type, called_positive, cstage, cstage_num, ctaf)
+
+df_ctaf_wgmeth <- df_ctaf_wgmeth %>%
+  collapse_cancer_type_to_remaining(wh_col = "cancer_type") %>%
+  assertr::verify(all(.$cancer_type %in% vec_collapse_tissues)) %>%
+  dplyr::mutate(cancer_type = factor(cancer_type,
+                                     levels = vec_collapse_tissues))
+
+df_ctaf_wgmeth <- df_ctaf_wgmeth %>%
+  dplyr::mutate(log10_ctaf = log10(ctaf))
+```
+
+```{r}
+# Binomial regression model of detection versus arbitrary vector of predictors.
+regress_detection <- function(df_ctaf_wgmeth,
+                              vec_predictor_names) {
+
+  require_columns(df_ctaf_wgmeth,
+                  c("called_positive", vec_predictor_names))
+
+  my_formula_rhs <- paste(vec_predictor_names, collapse = " + ")
+  my_formula <- sprintf("called_positive ~ %s", my_formula_rhs)
+  my_model <- glm(my_formula,
+                  data = df_ctaf_wgmeth,
+                  family = "binomial")
+
+  my_results <- broom::tidy(my_model) %>%
+    dplyr::mutate(p.value_adjust = p.adjust(p.value, method = "BH")) %>%
+    add_pvalue_stars("p.value_adjust")
+
+  my_aic <- round(my_model$aic, digits = 1)
+  my_caption <- paste0("Logistic Regression: ", my_formula_rhs, ", AIC = ", my_aic)
+
+  return(list(df = my_results,
+              aic = my_aic,
+              caption = my_caption))
+}
+
+# cancer_type
+ls_model_detection_vs_cancer_type <-
+  regress_detection(df_ctaf_wgmeth, "cancer_type")
+
+# cancer_type + log10(cTAF)
+ls_model_detection_vs_cancer_type_ctaf <-
+  regress_detection(df_ctaf_wgmeth, c("cancer_type", "log10_ctaf"))
+
+# cancer_type + stage
+ls_model_detection_vs_cancer_type_cstage <-
+  regress_detection(df_ctaf_wgmeth, c("cancer_type", "cstage"))
+
+# cancer_type + stage + log10(cTAF)
+ls_model_detection_vs_cancer_type_cstage_ctaf <-
+  regress_detection(df_ctaf_wgmeth, c("cancer_type", "cstage", "log10_ctaf"))
+```
+
+```{r}
+# Collect AIC results from regressions.
+tab_aic_compare <-
+  tibble::tibble(
+    cancer_type = ls_model_detection_vs_cancer_type$aic,
+    cancer_type_cstage = ls_model_detection_vs_cancer_type_cstage$aic,
+    cancer_type_ctaf = ls_model_detection_vs_cancer_type_ctaf$aic,
+    cancer_type_ctaf_cstage = ls_model_detection_vs_cancer_type_cstage_ctaf$aic) %>%
+  tidyr::pivot_longer(cols = dplyr::everything(),
+                      names_to = "model",
+                      values_to = "aic") %>%
+  dplyr::arrange(aic) %>%
+  dplyr::mutate(delta_aic = aic - aic[1])
+```
+
+```{r}
+# Combine adjusted p-values from regression into table and append AIC results.
+tab_summary_regression <-
+  list(cancer_type = ls_model_detection_vs_cancer_type$df,
+       cancer_type_cstage = ls_model_detection_vs_cancer_type_cstage$df,
+       cancer_type_ctaf = ls_model_detection_vs_cancer_type_ctaf$df,
+       cancer_type_ctaf_cstage = ls_model_detection_vs_cancer_type_cstage_ctaf$df) %>%
+  dplyr::bind_rows(.id = "model") %>%
+  dplyr::mutate(p.value_stars = sprintf("%g %s", signif(p.value_adjust, digits = 2), stars)) %>%
+  dplyr::select(term, model, p.value_stars) %>%
+  tidyr::pivot_wider(names_from = model,
+                     values_from = p.value_stars,
+                     values_fill = "-")
+
+# Format AIC to include above P-value table.
+tab_reformat_aic_compare <-
+  tab_aic_compare %>%
+  tidyr::pivot_longer(cols = c("aic", "delta_aic"),
+                      names_to = "term",
+                      values_to = "value") %>%
+  dplyr::mutate(p.value_stars = sprintf("%g", round(value, digits = 1))) %>%
+  dplyr::select(model, term, p.value_stars) %>%
+  tidyr::pivot_wider(names_from = model,
+                     values_from = p.value_stars)
+
+# Format output table.
+tab_reformat_smry <- dplyr::bind_rows(tab_summary_regression,
+                                      tab_reformat_aic_compare) %>%
+  dplyr::mutate(term = stringr::str_remove_all(term, "cancer_type"),
+                term = stringr::str_replace_all(term, "Remaining", "Remaining\nCancer types"),
+                term = stringr::str_replace_all(term, "cstage", "Stage "),
+                term = stringr::str_replace_all(term, "delta_aic", "AIC - min(AIC)"),
+                term = stringr::str_replace_all(term, "aic", "AIC"))
+
+tab_reformat_smry <- tab_reformat_smry %>%
+  dplyr::mutate(term = stringr::str_replace_all(term, "cfdna_ctaf", "log10(cTAF)"))
+
+tab_reformat_smry %>%
+  dplyr::rename(`Predictor` = term,
+                `Cancer type` = cancer_type,
+                `Cancer type\n + stage` = cancer_type_cstage,
+                `Cancer type\n + cTAF` = cancer_type_ctaf,
+                `Cancer type\n + cTAF + stage` = cancer_type_ctaf_cstage) %>%
+  pander::pander(caption = "Compare regression models w/ AIC included")
+```
+
+## Supplementary Table 2: pAUC
+
+```{r}
+# Partial AUC from ROC curves as estimated by pROC package.
+ls_roc$valid$df_roc_summary %>%
+  dplyr::select(dataset, pauc) %>%
+  dplyr::arrange(pauc) %>%
+  pander::pander(caption = "Partial AUC (validation set)")
+```
+
+# Additional details and computations used in manuscript
+
+## Score cutoffs
+
+```{r}
+# Score cutoffs (from df_scores_cnc) as determined from the distribution of
+# scores in the Non-cancer population for each classifier using stats::quantile(method = 7).
+
+df_cutoffs <- readr::read_tsv(file.path(datadir,
+                          "score_cutoffs.tsv"))
+df_cutoffs %>%
+  pander::pander(caption = "Train/valid score cutoffs for each classifier",
+                 justify = "left")
+```
+
+## Detection by stage
+
+```{r}
+# Output table of Sensitivities by stage at 98% Specificity.
+df_detection_by_stage %>%
+  dplyr::select(classifier_name, train_or_valid, cstage, pretty) %>%
+  tidyr::pivot_wider(names_from = cstage,
+                     values_from = pretty,
+                     values_fill = "-") %>%
+  pander::pander(caption = "Detection by stage")
+```
+
+## LOD
+
+```{r}
+# Table of LODs.
+df_lod %>%
+  pander::pander("LOD by classifier for train/valid",
+                 justify = "right")
+```
+
+```{r}
+# Compute LOD of each classifier relative to WG methylation.
+df_lod %>%
+  dplyr::filter(train_or_valid == "valid") %>%
+  dplyr::select(classifier_name, train_or_valid, lod) %>%
+  dplyr::mutate(lod_meth = ifelse(stringr::str_detect(classifier_name, "methylation"),
+                                  lod, -1),
+                # Use max() to replace -1 with methylation LOD in all rows.
+                lod_meth = max(lod_meth),
+                lod_relative_to_meth = lod/lod_meth) %>%
+  pander::pander(caption = "LOD relative to WG methylation")
+```
+
+## Comparison of confusion matrices
+
+```{r}
+# Table with summary of overall CSO accuracy:
+df_cso_smry <-
+  lapply(ls_confmats, "[[", "smry") %>%
+  dplyr::bind_rows(.id = "wh_assay")
+
+df_cso_smry %>%
+  pander::pander(caption = "Joint confusion matrices comparison")
+```
+
+```{r}
+# Compare CSO accuracy relative to WG methylation.
+df_cso_smry_out <- df_cso_smry %>%
+  dplyr::mutate(n_correct_meth = ifelse(wh_assay == "WG methylation", n_correct, -1),
+                n_correct_meth = max(n_correct_meth),
+                f_correct_rel_meth = n_correct_meth/n_correct,
+                pretty = sprintf("%0.1f%% (%d/%d)",
+                                 f_correct_rel_meth*100, n_correct_meth, n_correct)) %>%
+  dplyr::select(wh_assay, pretty)
+
+str_cso_smry_out <- df_cso_smry_out %>%
+  dplyr::mutate(out = paste0("WG methylation:", wh_assay, " = ", pretty)) %>%
+  dplyr::pull(out) %>%
+  paste(collapse = "  \n")
+
+cat(paste0("Overall CSO accuracy relative to Methylation:  \n", str_cso_smry_out))
+```
+
+```{r}
+# Prior to McNemar test, collapse cancer types and top CSO to be consistent with
+# confusion matrices and then determine if each assay predicts the correct CSO
+# label (yes) or not (no) per participant.
+#   participant_id Methylation  SCNA   SNV-WBC
+#   ccga_4122      yes          yes    yes
+#   ccga_5706      no           no     no
+#   ccga_1857      yes          yes    no
+#   ccga_2397      yes          yes    no
+cso_combined_correct_per_pid <- df_cso %>%
+  collapse_cancer_types_to_other() %>%
+  assertr::verify(all(label_1st_w_other %in% vec_score_cols)) %>%
+  assertr::verify(all(cancer_type_w_other %in% vec_score_cols)) %>%
+  dplyr::mutate(label_1st_w_other_correct = ifelse(label_1st_w_other == cancer_type_w_other,
+                                                   "yes", "no")) %>%
+  dplyr::select(participant_id, classifier_name, label_1st_w_other_correct) %>%
+  tidyr::pivot_wider(names_from = classifier_name,
+                     values_from = label_1st_w_other_correct)
+# CSO is on joint detected samples so confirm no NAs.
+stopifnot(!any(is.na(cso_combined_correct_per_pid)))
+```
+
+```{r}
+# Helper function to compare CSO accuracies via McNemar P-value.
+compute_mcnemar <- function(cso_combined_correct_per_pid,
+                            col_1 = "WG methylation",
+                            col_2 = c("SCNA", "SNV-WBC")) {
+  col_2 <- match.arg(col_2)
+  require_columns(cso_combined_correct_per_pid,
+                  c("WG methylation", "SCNA", "SNV-WBC", col_1, col_2))
+
+  df_2x2 <- cso_combined_correct_per_pid %>%
+    dplyr::mutate(col1 = !!rlang::sym(col_1),
+                  col2 = !!rlang::sym(col_2)) %>%
+    dplyr::count(col1, col2) %>%
+    tidyr::pivot_wider(names_from = col2,
+                       values_from = n,
+                       values_fill = 0L)
+
+  p_value <- df_2x2 %>%
+    tibble::column_to_rownames(var = "col1") %>%
+    as.matrix() %>%
+    mcnemar.test() %>%
+    broom::tidy() %>%
+    dplyr::pull(p.value)
+
+  return(list(df_2x2 = df_2x2,
+              p_value = p_value))
+}
+
+ls_cso_pvalue_SCNA <- compute_mcnemar(cso_combined_correct_per_pid,
+                                      col_2 = "SCNA")
+ls_cso_pvalue_SNVWBC <- compute_mcnemar(cso_combined_correct_per_pid,
+                                        col_2 = "SNV-WBC")
+ls_cso_pvalue_SCNA_vs_SNVWBC <- compute_mcnemar(cso_combined_correct_per_pid,
+                                                col_1 = "SCNA",
+                                                col_2 = "SNV-WBC")
+
+ls_cso_pvalue_SCNA$df_2x2 %>%
+  dplyr::rename(` ` = col1) %>%
+  pander::pander(
+    caption =
+      sprintf("Correct CSO: WG methylation (rows) vs. SCNA (cols), McNemar P-value = %g",
+              signif(ls_cso_pvalue_SCNA$p_value, digits = 2)))
+cat('\n\n')
+ls_cso_pvalue_SNVWBC$df_2x2 %>%
+  dplyr::rename(` ` = col1) %>%
+  pander::pander(
+    caption =
+      sprintf("Correct CSO: WG methylation (rows) vs. SNV-WBC (cols), McNemar P-value = %g",
+              signif(ls_cso_pvalue_SNVWBC$p_value, digits = 2)))
+cat('\n\n')
+ls_cso_pvalue_SCNA_vs_SNVWBC$df_2x2 %>%
+  dplyr::rename(` ` = col1) %>%
+  pander::pander(
+    caption =
+      sprintf("Correct CSO: SCNA (rows) vs. SNV-WBC (cols), McNemar P-value = %g",
+              signif(ls_cso_pvalue_SCNA_vs_SNVWBC$p_value, digits = 2)))
+```
+
+### Spearman correlation: cTAF vs. stage
+
+Compute correlation between cTAF and stage for each cancer type.
+
+```{r spearman}
+stopifnot(!any(is.na(df_ctaf_wgmeth)))
+
+vec_cancer_types <- unique(df_ctaf_wgmeth$cancer_type)
+ls_results_cor <- vector("list", length(vec_cancer_types))
+names(ls_results_cor) <- vec_cancer_types
+
+for (wh_tissue in vec_cancer_types) {
+  df_ctaf_wgmeth_tissue <- df_ctaf_wgmeth %>%
+    dplyr::filter(cancer_type == wh_tissue)
+
+  results_cor <- cor.test(df_ctaf_wgmeth_tissue$ctaf,
+                          df_ctaf_wgmeth_tissue$cstage_num,
+                          method = "spearman")
+  ls_results_cor[[wh_tissue]] <- tibble::tibble(estimate = results_cor$estimate,
+                                                n = nrow(df_ctaf_wgmeth_tissue),
+                                                p.value = results_cor$p.value)
+}
+
+df_results_cor <- ls_results_cor %>%
+  dplyr::bind_rows(.id = "cancer_type") %>%
+  dplyr::mutate(p.value_adjust = p.adjust(p.value, method = "BH")) %>%
+  dplyr::arrange(-p.value) %>%
+  add_pvalue_stars("p.value_adjust") %>%
+  dplyr::mutate(stars = ifelse(stars == " ", "N.S.", stars)) %>%
+  dplyr::mutate(cancer_type_stars = sprintf("%s (%s)", cancer_type, stars))
+
+df_results_cor %>%
+  dplyr::select(-cancer_type_stars) %>%
+  pander::pander(caption = "Spearman rank correlation test (per tissue)")
+```
+
+## Detection point estimate comparison to WG methylation
+
+McNemar P-values for difference in detection with each classifier and WG Methylation (Validation set only).
+
+```{r}
+# Format table of detection for cancer pt's (rows) x classifier (cols).
+df_scores_eval_cancer_detection <- df_scores_cnc %>%
+  dplyr::filter(cnc_label_actual == "cancer",
+                train_or_valid == "valid") %>%
+  dplyr::select(classifier_name, train_or_valid, participant_id, cnc_label_predict) %>%
+  tidyr::pivot_wider(names_from = "classifier_name",
+                     values_from = "cnc_label_predict")
+
+# Classifier names w/o WG Methylation.
+vec_cols_classifier_no_meth <-
+  df_scores_cnc %>%
+  dplyr::filter(classifier_name != "WG methylation") %>%
+  dplyr::pull(classifier_name) %>%
+  unique()
+```
+
+```{r}
+# Loop for computing 2x2 matrix of each classifier's detection with
+# WG Methylation detection and then calculating McNemar P-value.
+for (wh_classifier in vec_cols_classifier_no_meth) {
+
+  # 2x2 matrix.
+  #   class_1    cancer non_cancer
+  #   cancer        155          3
+  #   non_cancer     10        296
+  df_2x2 <- df_scores_eval_cancer_detection %>%
+    dplyr::mutate(class_1 = `WG methylation`,
+                  class_2 = !!rlang::sym(wh_classifier)) %>%
+    dplyr::count(class_1, class_2) %>%
+    dplyr::filter(!is.na(class_2)) %>%  # Clinical classifier missing some pts.
+    tidyr::pivot_wider(names_from = class_2,
+                       values_from = n,
+                       values_fill = 0L)
+
+  p_value <- df_2x2 %>%
+    tibble::column_to_rownames(var = "class_1") %>%
+    as.matrix() %>%
+    mcnemar.test() %>%
+    broom::tidy() %>%
+    dplyr::pull(p.value)
+
+  # Output table with p-value.
+  df_2x2 %>%
+    dplyr::rename(` ` = class_1) %>%
+    pander::pander(
+      caption = sprintf("Validation set WG methylation (rows) vs. %s (cols), McNemar P-value = %g",
+                        wh_classifier,
+                        signif(p_value, digits = 2))) %>%
+    cat()
+}
+```
+
+# Output figs
+
+All output figs except UpSet plots, which are written separately.
+
+```{r}
+ls_plots <- list(
+  p_roc_train = list(fig = p_roc_train, width = 4, height = 4),
+  p_roc_train_zoom = list(fig = p_roc_train_zoom, width = 4, height = 4),
+  p_roc_train_legend = list(fig = ls_roc_legends$train, width = NA, height = NA),
+  p_roc_valid = list(fig = p_roc_valid, width = 4, height = 4),
+  p_roc_valid_zoom = list(fig =  p_roc_valid_zoom, width = 4, height = 4),
+  p_roc_valid_legend = list(fig = ls_roc_legends$valid, width = NA, height = NA),
+
+  p_detection_by_stage = list(fig = p_detection_by_stage, width = 7, height = 5.6),
+
+  p_conf_meth = list(fig = ls_confmats[["WG methylation"]]$plot, width = 7, height = 7),
+  p_conf_meth_all = list(fig =  ls_confmats_all[["WG methylation"]]$plot, width = 7, height = 7),
+  p_conf_snvwbc = list(fig =  ls_confmats[["SNV-WBC"]]$plot, width = 7, height = 7),
+  p_conf_snvwbc_all = list(fig =  ls_confmats_all[["SNV-WBC"]]$plot, width = 7, height = 7),
+  p_conf_scna = list(fig = ls_confmats[["SCNA"]]$plot, width = 7, height = 7),
+  p_conf_scna_all = list(fig = ls_confmats_all[["SCNA"]]$plot, width = 7, height = 7),
+
+  plt_var_valid = list(fig = plt_var_valid, width = 6, height = 6),
+
+  p_lod_valid = list(fig = p_lod_valid, width = 4, height = 4),
+  p_lod_all = list(fig = p_lod_all, width = 4, height = 4),
+
+  plot_ctaf_vs_stage_full = list(fig = plot_ctaf_vs_stage_full, width = 6, height = 11),
+  plot_ctaf_vs_stage_collapse = list(fig = plot_ctaf_vs_stage_collapse, width = 6, height = 6),
+
+  plt_chip_recurrence = list(fig = plt_chip_recurrence, width = 6, height = 6),
+  plt_chip_wbc_v_cfdna = list(fig = plt_chip_wbc_v_cfdna, width = 6.5, height = 7.5),
+
+  umap_plot = list(fig = umap_plot, width = 6, height = 6)
+)
+
+ls_tables <- list(
+  df_lod = df_lod
+)
+if (write_output) {
+  res <-
+    lapply(names(ls_plots),
+           function(wh_plot) {
+             ggplot2::ggsave(filename = paste0(wh_plot, ".pdf"),
+                             path = outdir,
+                             plot = ls_plots[[wh_plot]]$fig,
+                             width = ls_plots[[wh_plot]]$width,
+                             height = ls_plots[[wh_plot]]$height,
+                             units = "in",
+                             dpi = 600,
+                             device = "pdf")
+           })
+}
+```
+
+# Reproducibility
+
+```{r session_info}
+sessionInfo() %>%
+  pander::pander(caption = "Session Info")
+```

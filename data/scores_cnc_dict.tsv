@@ -1,0 +1,12 @@
+variable_name	variable_label
+classifier_name	Classifier name: Allelic imbalance, Clinical data, Fragment endpoints, Fragment lengths, Pan-feature (Validation only), SCNA, SCNA-WBC, SNV, SNV-WBC, WG methylation
+participant_id	Participant ID: e.g., ccga_1234
+train_or_valid	Training or Validation set: train, valid
+fold	Training set cross-validation fold: 1-10, Validation set fold = 0
+cancer_type	Cancer Types plus Non-cancer.
+cstage	Clinical stage: Non-cancer, I, II, III, IV, and Non-informative.  For cases with multiple primaries the highest stage is reported.
+cnc_label_actual	Actual label: cancer, non_cancer
+p_cancer	cancer/non-cancer score from the classifier
+score_cutoff	Score cutoff for calling cancer (p_cancer >= score_cutoff)
+cnc_label_predict	Predicted label: cancer, non_cancer
+specificity_target	Specificity target: 0.98

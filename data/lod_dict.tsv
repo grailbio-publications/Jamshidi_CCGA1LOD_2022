@@ -1,0 +1,10 @@
+variable_name	variable_label
+classifier_name	Classifier name: Allelic imbalance, Clinical data, Fragment endpoints, Fragment lengths, Pan-feature (Validation only), SCNA, SCNA-WBC, SNV, SNV-WBC, WG methylation
+train_or_valid	Training or Validation set: train, valid
+lod	Limit of Detection [0-1]
+p_detection	Point estimate of 0.5 from logistic regression of LOD (i.e., LOD50)
+lod_lcb	Lower bound of 95% confidence limit of LOD
+lod_ucb	Upper bound of 95% confidence limit of LOD
+specificity	Specificity target: 0.98
+n_obs	Number of participants used to estimate LOD
+study	Substudy of CCGA: CCGA1, CCGA2

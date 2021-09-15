@@ -1,0 +1,3 @@
+variable_name	variable_label
+hgvsp_canonical	HGVS protein nomenclature, e.g., DNMT3A:p.Met852Val
+n_pts_w_snv	Number of participants with non-synomymous mutation

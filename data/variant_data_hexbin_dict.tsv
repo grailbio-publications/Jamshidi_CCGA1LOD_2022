@@ -1,0 +1,4 @@
+variable_name	variable_label
+mean_af_cfdna	Midpoint of hex-binned variant allele frequency in cfDNA, numeric [0-1]; hexbins were computed on log10(mean_af_cfdna)
+mean_af_gdna	Midpoint of hex-binned variant allele frequency in white blood cell gDNA, numeric [0-1]; hexbins were computed on log10(mean_af_gdna)
+n_variants	Total number of variants within bin

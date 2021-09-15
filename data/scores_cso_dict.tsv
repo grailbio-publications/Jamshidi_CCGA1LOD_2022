@@ -1,0 +1,23 @@
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+cancer_type	Cancer Types plus Non-cancer.
+cstage	Clinical Stage - Highest (Derived): Non-cancer, I, II, III, IV, and Non-informative.  For cases with multiple primaries the highest stage is reported.
+train_or_valid	Training or Validation set: train, valid
+cnc_label_actual	Actual label: cancer, non_cancer
+classifier_name	Cancer Signal Origin (CSO) classifier name: SCNA, SNV-WBC, WG methylation
+cnc_label_predict	Predicted label: cancer, non_cancer
+n_assays_predict_cancer	Number of assays that predict this participant as cancer: 1, 2, 3
+label_1st	CSO label with the highest score
+Breast	CSO score for Breast cancer prediction
+Cervix	CSO score for Cervix cancer prediction
+Colon/Rectum	CSO score for Colon/Rectum cancer prediction
+Esophagus	CSO score for Esophagus cancer prediction
+Head/Neck	CSO score for Head/Neck cancer prediction
+Liver/Bile duct/Gallbladder	CSO score for Liver/Bile duct/Gallbladder cancer prediction
+Lung	CSO score for Lung cancer prediction
+Lymphoma	CSO score for Lymphoma prediction
+Plasma cell neoplasm	CSO score for Plasma cell neoplasm prediction
+Other	CSO score for Other cancer prediction
+Ovary	CSO score for Ovary cancer prediction
+Pancreas	CSO score for Pancreas cancer prediction
+Kidney	CSO score for Kidney cancer prediction

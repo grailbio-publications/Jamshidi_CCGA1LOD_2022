@@ -1,0 +1,4 @@
+variable_name	variable_label
+classifier_name	Classifier name: Allelic imbalance, Clinical data, Fragment endpoints, Fragment lengths, Pan-feature (Validation only), SCNA, SCNA-WBC, SNV, SNV-WBC, WG methylation
+train	Training dataset
+valid	Validation dataset

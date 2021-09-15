@@ -7,7 +7,9 @@ presented in Jamshidi A., et al., 2021. "Evaluation of Cell-Free DNA Approaches 
 
 Follow instructions at https://cran.r-project.org/bin/linux/ubuntu/README.html
 to install R (version 3.6.0 was used for this analysis). The packages needed to
-reproduce the results have been captured with the package `packrat`.  
+reproduce the results have been captured with the package `packrat`.  Pandoc
+version 2.10.1 was also installed using:
+https://github.com/jgm/pandoc/releases/download/2.10.1/pandoc-2.10.1-1-amd64.deb.
 
 To add the required packages and render the anaysis markdown:
 

@@ -1,0 +1,15 @@
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+sex	Sex: Male; Female
+age	Age: 20 - 85+
+age_cat	Age category: <50, 50+
+race_cat	Race category: White, non-Hispanic; Black or African American; Hispanic; Other/unknown
+bmi_cat	Body Mass Index category: Normal/Underweight; Obesity; Overweight; Missing
+smk_cat	Smoker status category: Non-smoker; Former smoker; Current smoker; Missing
+site_region	Study site region: Midwest, Northeast, South, West
+dx_method	Method of diagnosis: 'Screening', 'Clinical presentation', and <NA> for Non-cancer
+train_or_valid	Training or Validation set: train, valid
+cancer_status	Cancer status: Invasive Cancer; Non-cancer
+solid_or_liquid	Solid or liquid cancer: solid, liquid
+cancer_type	Cancer Types plus Non-cancer.
+cstage	Clinical Stage - Highest (Derived): Non-cancer, I, II, III, IV, and Non-informative.  For cases with multiple primaries the highest stage is reported.

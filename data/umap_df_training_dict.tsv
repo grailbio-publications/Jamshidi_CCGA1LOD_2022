@@ -1,0 +1,4 @@
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+umap_1	UMAP axis 1: numeric
+umap_2	UMAP axis 2: numeric
