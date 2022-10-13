@@ -13,9 +13,9 @@ This implementation was developed and tested on Ubuntu 20.04.3 LTS.
 
 To install the required packages and render the anaysis markdown:
 
-1. Copy the contents of this package (`Jamshidi_CCGA1_2021/`) to the desired location (`/YOUR_LOCATION/Jamshidi_CCGA1_2021`).
+1. Copy the contents of this package (`Jamshidi_CCGA1_2022/`) to the desired location (`/YOUR_LOCATION/Jamshidi_CCGA1_2022`).
 
-2. `cd` into the project directory (`/YOUR_LOCATION/Jamshidi_CCGA1_2021`), and start `R`.
+2. `cd` into the project directory (`/YOUR_LOCATION/Jamshidi_CCGA1_2022`), and start `R`.
 
 3. Install packrat:
 
@@ -37,12 +37,12 @@ ensuring there is a startup message like:
 
 ```
 Packrat mode on. Using library in directory:
-- "/YOUR_LOCATION/Jamshidi_CCGA1_2021/packrat/lib"
+- "/YOUR_LOCATION/Jamshidi_CCGA1_2022/packrat/lib"
 ```
 
 Alternatively, from the R console run `.libPaths()` and ensure that the `packrat`
 library is one of the paths (i.e., something like
-`"/YOUR_LOCATION/Jamshidi_CCGA1_2021/packrat/lib/x86_64-apple-darwin17.0/4.1.2"` is included).
+`"/YOUR_LOCATION/Jamshidi_CCGA1_2022/packrat/lib/x86_64-apple-darwin17.0/4.1.2"` is included).
 
 6. Install all of the versioned dependencies from CRAN and Bioconductor via packrat:
 
@@ -60,8 +60,8 @@ macOS Monterey Version 12.5, though different user-specific local installations
 were required in both cases for all packages to be installed with `packrat::restore()`.
 
 7. Render the R Markdown report containing figures and tables in the publication.  Figures
-(pdf) are saved to `/YOUR_LOCATION/Jamshidi_CCGA1_2021/out/`, and report .html is saved
-to `/YOUR_LOCATION/Jamshidi_CCGA1_2021/Rmd/make_output.html`.
+(pdf) are saved to `/YOUR_LOCATION/Jamshidi_CCGA1_2022/out/`, and report .html is saved
+to `/YOUR_LOCATION/Jamshidi_CCGA1_2022/Rmd/make_output.html`.
 
 ```
 rmarkdown::render("Rmd/make_output.Rmd")
