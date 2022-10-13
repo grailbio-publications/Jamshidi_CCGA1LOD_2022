@@ -1,6 +1,5 @@
 ---
 title: "Tables and figures for Jamshidi et al., CCGA1/LOD manuscript"
-author: "John Beausang (jbeausang@grailbio.com)"
 date: '`r format(Sys.time(), "%Y-%m-%d %X")`'
 output: html_document
 ---
@@ -12,29 +11,30 @@ margin-left: auto;
 margin-right: auto;
 }</style>
 
-```{r setup, echo = FALSE}
+```{r setup, include = FALSE}
 # Packages installed with Tidyverse.
-requireNamespace("readr", quietly = TRUE)
-requireNamespace("purrr", quietly = TRUE)
-requireNamespace("stringr", quietly = TRUE)
-requireNamespace("tidyr", quietly = TRUE)
-requireNamespace("magrittr", quietly = TRUE)
-requireNamespace("dplyr", quietly = TRUE)
-requireNamespace("tibble", quietly = TRUE)
-requireNamespace("tidyselect", quietly = TRUE)
-requireNamespace("rlang", quietly = TRUE)
-requireNamespace("scales", quietly = TRUE)
-requireNamespace("broom", quietly = TRUE)
+loadNamespace("readr")
+loadNamespace("purrr")
+loadNamespace("stringr")
+loadNamespace("tidyr")
+loadNamespace("magrittr")
+loadNamespace("dplyr")
+loadNamespace("tibble")
+loadNamespace("tidyselect")
+loadNamespace("rlang")
+loadNamespace("scales")
+loadNamespace("broom")
+loadNamespace("hexbin")
 suppressMessages(library(ggplot2))
 
 # Packages that are not installed with Tidyverse.
-requireNamespace("assertr", quietly = TRUE)
-requireNamespace("pander", quietly = TRUE)
-requireNamespace("pROC", quietly = TRUE)
-requireNamespace("scam", quietly = TRUE)
-requireNamespace("gridExtra", quietly = TRUE)
-requireNamespace("ggpubr", quietly = TRUE)
-requireNamespace("UpSetR", quietly = TRUE)
+loadNamespace("assertr")
+loadNamespace("pander")
+loadNamespace("pROC")
+loadNamespace("scam")
+loadNamespace("gridExtra")
+loadNamespace("ggpubr")
+loadNamespace("UpSetR")
 
 `%>%` <- magrittr::`%>%`
 
@@ -410,13 +410,13 @@ plot_mult_roc_curve <- function(ls_predictions,
         ", pAUC [Sp: ", pauc_range[1], "-", pauc_range[2], "] = ", pauc)
     )
 
-  if (vec_colors == "") {
+  if (identical(vec_colors, "")) {
     vec_colors <- gg_color_hue(length(ls_roc))
   }
-  if (vec_fills == "") {
+  if (identical(vec_fills, "")) {
     vec_fills <- rep("white", length(ls_roc))
   }
-  if (vec_linetypes == "") {
+  if (identical(vec_linetypes, "")) {
     vec_linetypes <- rep("solid", length(ls_roc))
   }
 
@@ -449,18 +449,29 @@ plot_mult_roc_curve <- function(ls_predictions,
 # Compute ROC curves for train and validation sets.
 
 # Formatting details for ROC curve.
+my_blue <- rgb(2, 115, 179, maxColorValue = 255)
+my_green <- rgb(2, 158, 115, maxColorValue = 255)
+my_purple <- rgb(141, 144, 212, maxColorValue = 255)
+my_darkred <- rgb(170, 51, 120, maxColorValue = 255)
+my_orange <- rgb(241, 101, 34, maxColorValue = 255)
+my_magenta <- rgb(235, 0, 139, maxColorValue = 255)
+my_cyan <- rgb(0, 173, 238, maxColorValue = 255)
+my_gray <- rgb(146, 148, 151, maxColorValue = 255)
+my_yellow <- rgb(250, 175, 64, maxColorValue = 255)
+my_black <- rgb(64, 64, 65, maxColorValue = 255)
+
 df_roc_format <- tibble::tribble(
   ~classifier_name,     ~colors,      ~fills,     ~linetypes,
-  "WG methylation",     "orangered",  "white",     "solid",
-  "SNV",                "blue",       "white",     "solid",
-  "SNV-WBC",            "blue",       "blue",      "dashed",
-  "SCNA",               "darkgreen",  "white",     "solid",
-  "SCNA-WBC",           "darkgreen",  "darkgreen", "dashed",
-  "Fragment endpoints", "darkgray",   "white",     "solid",
-  "Fragment lengths",   "purple",     "white",     "solid",
-  "Allelic imbalance",  "black",      "white",     "solid",
-  "Pan-feature",        "cyan",       "white",     "solid",
-  "Clinical data",      "gold",       "white",     "solid"
+  "WG methylation",     my_orange,    my_orange,    "solid",
+  "SNV",                my_blue,      my_blue,      "solid",
+  "SNV-WBC",            my_magenta,   my_magenta,   "solid",
+  "SCNA",               my_green,     my_green,     "solid",
+  "SCNA-WBC",           my_cyan,      my_cyan,      "solid",
+  "Fragment endpoints", my_gray,      my_gray,      "solid",
+  "Fragment lengths",   my_darkred,   my_darkred,   "solid",
+  "Allelic imbalance",  my_black,     my_black,     "solid",
+  "Pan-feature",        my_purple,    my_purple,    "solid",
+  "Clinical data",      my_yellow,    my_yellow,    "solid"
 )
 
 # Set of expected classifier names (excludes "Pan-feature" from training set).
@@ -669,7 +680,7 @@ make_lod_whisker_plot <- function(df_lod,
     coord_flip() +
     scale_color_manual(values = c("black", "royalblue")) +
     labs(x = "",
-         y = "Limit of Detection\n(Circulating Tumor Allele Fraction)",
+         y = "Clinical Limit of Detection\n(Circulating Tumor Allele Fraction)",
          caption = paste0("N = ", str_train_or_valid_counts)) +
     theme(legend.position = "bottom")
   return(p_lod)
@@ -906,12 +917,12 @@ make_confusion_matrix <- function(df_cso,
       breaks = c("black", "gray", "transparent"),
       limits = c("black", "gray", "transparent"),
       labels = c("none", "none", "none"),
-      guide = FALSE) +
+      guide = "none") +
     ggplot2::scale_size_manual(
       values = 0.4,
       breaks = "none",
       limits =  "none",
-      guide = FALSE)
+      guide = "none")
 
   ### 5) Format primary and secondary axes.
 
@@ -1077,7 +1088,7 @@ make_ctaf_vs_stage_plot <- function(score_and_ctaf,
   df_ctaf_counts <- df_scores_cnc_w_ctaf %>%
     dplyr::count(cancer_type, cstage, called_positive) %>%
     dplyr::group_by(cancer_type) %>%
-    tidyr::complete(cancer_type, cstage, called_positive, fill = list(n = 0L)) %>%
+    tidyr::complete(cstage, called_positive, fill = list(n = 0L)) %>%
     tidyr::pivot_wider(names_from = "called_positive",
                        values_from = "n",
                        values_fill = 0L) %>%
@@ -1102,7 +1113,7 @@ make_ctaf_vs_stage_plot <- function(score_and_ctaf,
     geom_text(data = df_ctaf_counts,
               aes(label = n_label),
               size = 3, vjust = 1) +
-    guides(guides(fill = guide_legend(override.aes = list(shape = 21)))) +
+    guides(fill = guide_legend(override.aes = list(shape = 21))) +
     scale_y_log10() +
     theme(legend.position = "none") +
     labs(x = "Stage",
@@ -1519,10 +1530,12 @@ plt_var_valid <- ggplot2::ggplot() +
                      inherit.aes = FALSE) +
   ggplot2::scale_color_manual(
     values = c("royalblue", "black"),
-    breaks = c(TRUE, FALSE)) +
+    breaks = c(TRUE, FALSE),
+    labels = c("Cancer signal detected", "Cancer signal not detected")) +
   ggplot2::scale_shape_manual(
     values = c(21, 19),
-    breaks = c(TRUE, FALSE))
+    breaks = c(TRUE, FALSE),
+    labels = c("Cancer signal detected", "Cancer signal not detected"))
 
 plt_var_valid
 ```
@@ -1598,6 +1611,7 @@ n_single_group_cutoff <- 3
 
 # Table of recurrent nonsynonymous variants.
 recurrence_ns_his <- n_pts_per_variant %>%
+  dplyr::filter(is_nonsyn) %>%
   dplyr::count(n_pts_w_snv, name = "n_snvs") %>%
   dplyr::mutate(n_pts_w_snv_mod =
                   ifelse(n_pts_w_snv <= n_single_group_cutoff,
@@ -1640,11 +1654,7 @@ cat(paste0(
 
 # Tables
 
-## Table 1: Mapping of assays, features and classifiers
-
-No code
-
-## Table 2: Demographic Table
+## Table 1: Demographic Table
 
 ```{r}
 
@@ -1676,7 +1686,8 @@ tally_clin_by_var <- function(df_clin,
 
   df_tally <- df_clin_w_my_var %>%
     dplyr::group_by(train_or_valid, cancer_status, my_var) %>%
-    dplyr::summarise(n = dplyr::n()) %>%
+    dplyr::summarise(n = dplyr::n(),
+                     .groups = "drop") %>%
     dplyr::group_by(train_or_valid, cancer_status) %>%
     dplyr::mutate(n_total = sum(n),
                   pretty = sprintf("%d (%d%%)", n, round(n/n_total*100))) %>%
@@ -1780,6 +1791,10 @@ dplyr::bind_rows(
   demo_screen) %>%
   pander::pander(caption = "CCGA1 demographic table")
 ```
+
+## Table 2: Mapping of assays, features and classifiers
+
+No code
 
 ## Table 3: Performance metrics at 98% Specificity
 
