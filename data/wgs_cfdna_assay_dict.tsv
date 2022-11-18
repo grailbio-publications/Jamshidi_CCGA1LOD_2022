@@ -1,3 +1,9 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:559adfa4d8f5a7935032be753e503c64a2afb9439fac1a81b1e726996dc598d7
-size 661
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+batch	Flowcell id (batch level data for wgs sequencing step)
+counts_total	The total raw number of fragments in the bam file ([0,])
+counts_dedup	The total number of unique (non-pcr or optical duplicate) fragments ([0,])
+counts_mapq60	The total number of counts_dedup fragments that are properly aligned and with mapq>60 and to the same chromosome ([0,])
+mean_coverage	Coverage value mean ([0,]) using counts_mapq60 fragments
+median_coverage	Coverage value median ([0,]) using counts_mapq60 fragments
+stdev_coverage	Coverage value standard deviation ([0,]) using counts_mapq60 fragments

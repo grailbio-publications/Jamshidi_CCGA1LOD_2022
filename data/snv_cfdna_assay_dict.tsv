@@ -1,3 +1,15 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:de1a8cde16cc79bc91088e69a0a46af069f3a4f89b6e339140b989ebb1e218d2
-size 819
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+plasma_volume	Sample plasma volume (ml) 
+input_dna_concentration	Dna concentration (ng/μl) 
+input_dna_volumne	Dna volume (μl) 
+mass_dna	DNA mass (ng) input into library ([0,])
+batch	Flowcell id (batch level data for targeted sequencing step)
+reads_raw_total	The number of raw reads passing filters  ([0,])
+coverage_raw_reads	Mean coverage across target regions ([0,])
+reads_collapsed_total	The number of raw reads passing filters  ([0,])
+reads_collapsed_duplex	Number of duplex reads ([0,])
+reads_collapsed_non_duplex	Number of non-duplex reads ([0,])
+coverage_collapsed_reads	Mean coverage across target regions ([0,])
+fragments_total	Total number of collapsed fragments ([0,])
+coverage_fragments	Mean coverage across target regions ([0,])

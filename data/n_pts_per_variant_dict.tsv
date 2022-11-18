@@ -1,3 +1,5 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f7262f517bab585dac3bd17b01c9021c4e77324f9b3920d69989024d9e4eda43
-size 300
+variable_name	variable_label
+hgvsp_canonical	HGVS protein nomenclature, e.g., DNMT3A:p.Met852Val
+snv	Single nucleotide variant (chrom_position_ref_alt), e.g., chr2_25458619_T_C
+is_nonsyn	TRUE if non-synonymous variant, FALSE otherwise.
+n_pts_w_snv	Number of participants with non-synomymous mutation

@@ -1,3 +1,14 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d2c2343e186eb6ed631c0b9be06a1d497c1f9fc3e2b606f9efabb5fa0284b197
-size 962
+variable_name	variable_label
+participant_id	Participant ID: e.g., ccga_1234
+batch	Batch label for wgbs sequencing step
+plasma_volume	Sample plasma volume (ml) 
+concentration_dna	cfDNA Concentration (ng/μL) (sample level data for Bisulfite Conversion step)
+input_volume	cfDNA Volume (μL) (sample level data for Bisulfite Conversion step)
+mass_dna	DNA mass (ng) input into library ([0,])
+counts_total	The total raw number of fragments in the bam file ([0,])
+counts_dedup	The total number of unique (non-pcr or optical duplicate) fragments ([0,])
+counts_mapq60	The total number of counts_dedup fragments that are properly aligned and with mapq>60 and to the same chromosome ([0,])
+mean_coverage	Coverage value mean ([0,]) using counts_mapq60 fragments
+median_coverage	Coverage value median ([0,]) using counts_mapq60 fragments
+stdev_coverage	Coverage value standard deviation ([0,]) using counts_mapq60 fragments
+bs_conv_ratio	Bisulfite conversion ratio ([0, 1])
